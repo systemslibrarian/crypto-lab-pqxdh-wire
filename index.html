@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <script>
+      // Dark is the only theme. Pin it before first paint, and overwrite any
+      // 'light' a visitor stored back when the header carried a theme toggle.
+      (function () {
+        try {
+          localStorage.setItem('theme', 'dark');
+        } catch (e) {}
+        document.documentElement.setAttribute('data-theme', 'dark');
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="An interactive PQXDH teaching lab using X25519, Ed25519, ML-KEM-1024, HKDF-SHA-512, and AES-GCM."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>"
+    />
+    <title>PQXDH Wire — crypto-lab</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#app">Skip to lab</a>
+    <header class="cl-topbar" role="banner">
+      <a class="cl-brand" href="https://crypto-lab.systemslibrarian.dev/">CRYPTO LAB</a>
+      <span class="cl-divider" aria-hidden="true">/</span>
+      <span class="cl-lab-name">PQXDH WIRE</span>
+      <nav class="cl-nav" aria-label="Lab links">
+        <a href="https://github.com/systemslibrarian/crypto-lab-pqxdh-wire">SOURCE</a>
+        <a href="#sources">SOURCES</a>
+      </nav>
+    </header>
+    <main id="app"></main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
