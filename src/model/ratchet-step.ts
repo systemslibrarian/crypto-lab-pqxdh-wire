@@ -17,11 +17,48 @@ function deriveNextRoot(rootKey: Uint8Array, dhOutput: Uint8Array): Uint8Array {
   )
 }
 
+/** Exactly what a passive observer sees on the wire for one root update. */
+export interface RatchetStepTranscript {
+  alicePublic: Uint8Array
+  bobPublic: Uint8Array
+}
+
+/**
+ * What the model hands the adversary for one step. Under the curve-break
+ * premise, Shor recovers Alice's ephemeral secret from `alicePublic`; with no
+ * break granted, the adversary receives nothing and holds only the transcript.
+ */
+export interface AdversaryStepGrant {
+  recoveredAliceSecret?: Uint8Array
+}
+
 export interface RatchetModelResult {
   honestRoots: Uint8Array[]
   adversaryRoots: Uint8Array[]
   healed: boolean
   stillReadable: boolean
+}
+
+/**
+ * The adversary's own root update. It is deliberately a separate function that
+ * closes over nothing: its only inputs are its previous root, the public
+ * transcript, and the grant. The earlier version recomputed the step inline
+ * with `alice.secretKey` still in scope — the identical expression three lines
+ * above the honest one, off a chain that was only ever extended under
+ * `quantumBreak` — so `stillReadable` had one reachable outcome and was a
+ * verdict that could not report false. Here the adversary advances only if the
+ * grant actually carries a secret, and only if that secret really is the one
+ * behind the public key on the wire; otherwise it stays on its last root.
+ */
+export function adversaryAdvance(
+  previousRoot: Uint8Array,
+  transcript: RatchetStepTranscript,
+  grant: AdversaryStepGrant,
+): Uint8Array | undefined {
+  const secret = grant.recoveredAliceSecret
+  if (!secret) return undefined
+  if (!equalBytes(x25519.getPublicKey(secret), transcript.alicePublic)) return undefined
+  return deriveNextRoot(previousRoot, x25519.getSharedSecret(secret, transcript.bobPublic))
 }
 
 export function runRatchetModel(
@@ -43,14 +80,26 @@ export function runRatchetModel(
     }
     honestRoots.push(nextAliceRoot)
 
-    if (quantumBreak) {
-      const modeledRecoveredDh = x25519.getSharedSecret(alice.secretKey, bob.publicKey)
-      adversaryRoots.push(deriveNextRoot(adversaryRoots.at(-1)!, modeledRecoveredDh))
+    const transcript: RatchetStepTranscript = {
+      alicePublic: alice.publicKey,
+      bobPublic: bob.publicKey,
+    }
+    const grant: AdversaryStepGrant = quantumBreak
+      ? { recoveredAliceSecret: alice.secretKey }
+      : {}
+    if (adversaryRoots.length === step + 1) {
+      const next = adversaryAdvance(adversaryRoots.at(-1)!, transcript, grant)
+      if (next) adversaryRoots.push(next)
     }
   }
 
+  // Measured against a chain that is always built — including the classical case
+  // where it stalls at the compromised root — so this comparison has two
+  // reachable outcomes instead of restating its own premise.
   const stillReadable =
-    quantumBreak && equalBytes(honestRoots.at(-1)!, adversaryRoots.at(-1)!)
+    adversaryRoots.length === honestRoots.length &&
+    honestRoots.every((root, index) => equalBytes(root, adversaryRoots[index]))
+
   // Measured, not counted. `honestRoots.length === 4` is true by construction of
   // the loop above, so it reported HEALED even if every step had left the root
   // unchanged. Healing means each step actually replaced the root and the chain

@@ -20,11 +20,50 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  # Every rendered verdict on the page carries data-verdict, every marker is
+  # covered by a recorded mutation, and nothing renders an outcome outside a
+  # marker. This is its own job so it is its own check, and so it can be a
+  # REQUIRED status check on main: a check that runs but cannot block anything
+  # is decoration. Auto-merge waits only on required checks, and deploy below
+  # waits on this job by `needs:`, which also covers a direct push to main —
+  # the path that skips pull-request checks entirely.
+  verdict-gate:
+    name: verdict-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      # CI is set by Actions, so playwright.config.ts turns off
+      # reuseExistingServer and the suite can only hit a server built from this
+      # checkout. A reused or shared-port server makes a real kill look like a
+      # survivor, and this lab's port (4700) is pinned in the catalog's
+      # playwright-ports.json.
+      - name: Verdict coverage and per-marker verdicts
+        run: npm run test:verdicts
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # configure-pages@v6 enables Pages on first use and needs these. With
+      # `contents: read` alone it 403s — the exact step that failed here on
+      # 2026-09-11, on a job whose own permissions block said nothing about it.
+      pages: write
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -54,7 +93,7 @@ jobs:
 
   deploy:
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [build, verdict-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -70,7 +109,7 @@ jobs:
 
   dependabot-auto-merge:
     if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
-    needs: build
+    needs: [build, verdict-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -267,3 +267,10 @@ td { color: var(--text-dim); font: .72rem/1.45 'DM Mono', monospace; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+/* The byte-for-byte verdict is rendered from the comparison, so it needs a
+   losing face as well as a winning one. Reached only when Alice and Bob derive
+   different session keys. */
+.comparison[data-outcome="alarm"] { border-color: var(--alarm); background: color-mix(in oklab, var(--alarm) 8%, var(--surface)); }
+.comparison[data-outcome="alarm"] .verdict { border-bottom-color: var(--alarm); }
+.verdict-alarm .verdict-icon { border-color: var(--alarm); }
+.verdict-alarm strong { color: var(--alarm); }

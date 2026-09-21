@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { bytesToHex, equalBytes } from '../crypto/bytes.js'
 import { createAdversaryGrant, recomputeAsAdversary, runImpersonationFixture } from '../model/quantum.js'
-import { runRatchetModel } from '../model/ratchet-step.js'
+import { adversaryAdvance, runRatchetModel } from '../model/ratchet-step.js'
 import { runAlice } from './alice.js'
 import { runBob } from './bob.js'
 import { createBobState, publishBundle } from './bundle.js'
@@ -176,5 +176,36 @@ describe('modeled limits', () => {
     expect(equalBytes(classical.honestRoots.at(-1)!, compromisedRoot)).toBe(false)
     expect(classical.adversaryRoots).toHaveLength(1)
     expect(quantum.adversaryRoots).toHaveLength(4)
+
+    // The adversary chain is built in both runs and compared elementwise, so
+    // `stillReadable` is a measurement of two chains rather than a restatement
+    // of the premise. Classically it stalls on the compromised root.
+    expect(equalBytes(classical.adversaryRoots[0], compromisedRoot)).toBe(true)
+    quantum.adversaryRoots.forEach((root, index) => {
+      expect(equalBytes(root, quantum.honestRoots[index])).toBe(true)
+    })
+  })
+
+  it('refuses a grant that is not a recovery of the wire public key', () => {
+    // `stillReadable` used to recompute the honest step inline with Alice's
+    // secret still in scope, so it had one reachable outcome. The adversary now
+    // takes only the transcript plus a grant, and checks that the granted
+    // secret really is the one behind the public key it saw.
+    const root = new Uint8Array(32).fill(0x11)
+    const alice = x25519.keygen()
+    const bob = x25519.keygen()
+    const transcript = { alicePublic: alice.publicKey, bobPublic: bob.publicKey }
+
+    const followed = adversaryAdvance(root, transcript, {
+      recoveredAliceSecret: alice.secretKey,
+    })
+    expect(followed).toBeDefined()
+
+    expect(adversaryAdvance(root, transcript, {})).toBeUndefined()
+    expect(
+      adversaryAdvance(root, transcript, {
+        recoveredAliceSecret: x25519.keygen().secretKey,
+      }),
+    ).toBeUndefined()
   })
 })

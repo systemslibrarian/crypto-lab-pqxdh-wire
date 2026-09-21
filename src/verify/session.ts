@@ -1,8 +1,8 @@
-import { equalBytes } from '../crypto/bytes.js'
 import { runAlice, type AliceResult } from '../pqxdh/alice.js'
 import { runBob, type BobResult } from '../pqxdh/bob.js'
 import { createBobState, publishBundle } from '../pqxdh/bundle.js'
 import type { BobPrivateState, PublicBundle } from '../pqxdh/types.js'
+import { sessionKeysMatch } from './match.js'
 
 export interface VerifiedSession {
   bobState: BobPrivateState
@@ -24,6 +24,6 @@ export async function runVerifiedHandshake(
     bundle,
     alice,
     bob,
-    keysMatch: equalBytes(alice.sessionKey, bob.sessionKey),
+    keysMatch: sessionKeysMatch(alice.sessionKey, bob.sessionKey),
   }
 }

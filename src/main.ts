@@ -12,6 +12,7 @@ import {
   runImpersonationFixture,
 } from './model/quantum.js'
 import { runRatchetModel } from './model/ratchet-step.js'
+import { sessionKeysMatch } from './verify/match.js'
 import { TRANSCRIPT_DIFF } from './diff/x3dh-vs-pqxdh.js'
 
 const app = document.querySelector<HTMLElement>('#app')
@@ -69,7 +70,7 @@ app.innerHTML = `
         <li data-progress="5"><span>05</span> Compare</li>
       </ol>
 
-      <div class="protocol-status" id="protocol-status" role="status" aria-live="polite">
+      <div class="protocol-status" id="protocol-status" data-verdict="handshake-status" role="status" aria-live="polite">
         READY — no key material generated yet
       </div>
 
@@ -86,7 +87,7 @@ app.innerHTML = `
       </section>
 
       <div class="kdf-stage" role="group" aria-label="PQXDH key derivation input">
-        <div class="material-row" role="list">
+        <div class="material-row" data-verdict="kdf-input-state" role="list">
           ${materialBox('F', 'Domain separator', 'value-f')}
           ${materialBox('DH1', 'IK_A × SPK_B', 'value-dh1')}
           ${materialBox('DH2', 'EK_A × IK_B', 'value-dh2')}
@@ -95,7 +96,7 @@ app.innerHTML = `
           ${materialBox('SS', 'ML-KEM secret', 'value-ss')}
         </div>
         <div class="flow-line" aria-hidden="true"><span></span><b>HKDF-SHA-512</b><span></span></div>
-        <div class="session-key-box" data-material="SK">
+        <div class="session-key-box" data-material="SK" data-verdict="session-key-state">
           <div>
             <span class="material-name">SK</span>
             <span class="material-detail">32-byte session key</span>
@@ -118,9 +119,9 @@ app.innerHTML = `
       </section>
 
       <section class="comparison" id="comparison-panel" aria-labelledby="comparison-title" hidden>
-        <div class="verdict verdict-pass">
+        <div class="verdict" id="comparison-verdict" data-verdict="session-key-match">
           <span class="verdict-icon" aria-hidden="true"></span>
-          <div><span class="mini-label">BYTE-FOR-BYTE VERDICT</span><strong id="comparison-title">ALICE SK = BOB SK</strong></div>
+          <div><span class="mini-label">BYTE-FOR-BYTE VERDICT</span><strong id="comparison-title">Session keys not compared yet</strong></div>
         </div>
         <dl class="key-compare">
           <div><dt>Alice</dt><dd><code data-test="alice-sk">pending</code></dd></div>
@@ -150,7 +151,7 @@ app.innerHTML = `
           <span><strong>Lattice break</strong><small>Also hand the model the ML-KEM shared secret</small></span>
         </label>
       </fieldset>
-      <div class="recompute-panel" id="recompute-panel" role="status" aria-live="polite">
+      <div class="recompute-panel" id="recompute-panel" data-verdict="adversary-model" role="status" aria-live="polite">
         Complete the handshake to enable the adversary model.
       </div>
       <p class="what-this-isnt"><strong>What this isn't:</strong> the browser does not run Shor's algorithm or break ML-KEM. Private values are deliberately handed to a recomputation module so its inputs can be inspected and tested.</p>
@@ -169,14 +170,14 @@ app.innerHTML = `
           <h3>Corrupt a prekey signature</h3>
           <p>Alice must stop before generating an ephemeral key or KEM ciphertext.</p>
           <button class="button button-secondary" id="bad-signature-button" type="button">Corrupt and verify</button>
-          <output id="bad-signature-output" class="fixture-output" aria-live="polite">Not run</output>
+          <output id="bad-signature-output" class="fixture-output" data-verdict="prekey-signature-abort" aria-live="polite">Not run</output>
         </article>
         <article class="break-item">
           <span class="item-index">02 / IMPLICIT REJECTION</span>
           <h3>Flip one KEM ciphertext bit</h3>
           <p>ML-KEM returns a different secret; the first AES-GCM check exposes the mismatch.</p>
           <button class="button button-secondary" id="tamper-button" type="button">Tamper and deliver</button>
-          <output id="tamper-output" class="fixture-output" aria-live="polite">Not run</output>
+          <output id="tamper-output" class="fixture-output" data-verdict="kem-tamper-abort" aria-live="polite">Not run</output>
         </article>
         <article class="break-item">
           <span class="item-index">03 / PREKEY SUPPLY</span>
@@ -187,7 +188,7 @@ app.innerHTML = `
             <span class="switch" aria-hidden="true"></span>
             <span><strong>Reuse last-resort key</strong></span>
           </label>
-          <output id="reuse-output" class="fixture-output" aria-live="polite">One-time PQ prekeys are available</output>
+          <output id="reuse-output" class="fixture-output" data-verdict="last-resort-reuse" aria-live="polite">One-time PQ prekeys are available</output>
         </article>
       </div>
     </section>
@@ -205,14 +206,14 @@ app.innerHTML = `
           <h3>Classical authentication can be forged</h3>
           <p>PQXDH's post-quantum guarantee protects forward secrecy of the session key. Its prekey signature is classical, so a model granted Bob's signing and curve identity secrets can publish its own valid bundle.</p>
           <button class="button button-alarm" id="impersonate-button" type="button">Substitute signed bundle</button>
-          <output id="impersonate-output" class="fixture-output" aria-live="polite">Not run</output>
+          <output id="impersonate-output" class="fixture-output" data-verdict="impersonation" aria-live="polite">Not run</output>
         </article>
         <article class="limit-item">
           <span class="model-badge">REDUCED DOUBLE RATCHET MODEL</span>
           <h3>Classical healing is not quantum healing</h3>
           <p>After a root-key compromise, three fresh X25519 steps heal against a classical observer. A model that receives each later curve private key follows every new root.</p>
           <button class="button button-alarm" id="ratchet-button" type="button">Compromise and ratchet</button>
-          <output id="ratchet-output" class="fixture-output" aria-live="polite">Not run</output>
+          <output id="ratchet-output" class="fixture-output" data-verdict="ratchet-heal" aria-live="polite">Not run</output>
         </article>
       </div>
       <p class="what-this-isnt"><strong>What this isn't:</strong> this is one DH-root update, not the Double Ratchet message-key schedule, skipped-key handling, or full protocol. SPQR and the Triple Ratchet add post-quantum healing; deniability proofs and prekey-server behavior are also out of scope.</p>
@@ -325,7 +326,7 @@ async function advanceHandshake(): Promise<void> {
       bob = await runBob(bobState, bundle, alice.message)
       protocolStatus.textContent = 'BOB COMPLETE — decapsulation, four DH operations, and AEAD verification passed'
     } else if (step === 4 && alice && bob) {
-      protocolStatus.textContent = equalBytes(alice.sessionKey, bob.sessionKey)
+      protocolStatus.textContent = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
         ? 'MATCH — both modules independently derived the same 32 bytes'
         : 'ABORT — Alice and Bob derived different keys'
     }
@@ -383,7 +384,12 @@ function renderHandshake(): void {
     for (const name of ['DH1', 'DH2', 'DH3', 'DH4', 'SS']) {
       setMaterialState(name, 'derived', 'HONEST INPUT')
     }
-    setMaterialState('SK', step >= 5 ? 'pass' : 'derived', step >= 5 ? 'MATCHED' : 'DERIVED')
+    if (step < 5 || !bob) {
+      setMaterialState('SK', 'derived', 'DERIVED')
+    } else {
+      const matched = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
+      setMaterialState('SK', matched ? 'pass' : 'alarm', matched ? 'MATCHED' : 'DIVERGED')
+    }
   } else {
     for (const name of ['DH1', 'DH2', 'DH3', 'DH4', 'SS']) {
       setMaterialState(name, 'sealed', 'SEALED')
@@ -394,10 +400,33 @@ function renderHandshake(): void {
     requiredElement('[data-test="value-sk"]').textContent = 'not derived'
   }
 
-  if (step >= 5 && alice && bob) {
-    requiredElement('[data-test="alice-sk"]').textContent = bytesToHex(alice.sessionKey)
-    requiredElement('[data-test="bob-sk"]').textContent = bytesToHex(bob.sessionKey)
+  renderComparison()
+}
+
+/**
+ * The byte-for-byte verdict. This markup used to ship `ALICE SK = BOB SK`
+ * hard-coded in `verdict-pass` styling with nothing ever rewriting it, so the
+ * page stated the outcome of a comparison it never made.
+ */
+function renderComparison(): void {
+  const panel = requiredElement<HTMLElement>('#comparison-panel')
+  const verdict = requiredElement<HTMLElement>('#comparison-verdict')
+  const title = requiredElement<HTMLElement>('#comparison-title')
+  if (step < 5 || !alice || !bob) {
+    panel.dataset.outcome = 'pending'
+    verdict.classList.remove('verdict-pass', 'verdict-alarm')
+    title.textContent = 'Session keys not compared yet'
+    return
   }
+  const matched = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
+  requiredElement('[data-test="alice-sk"]').textContent = bytesToHex(alice.sessionKey)
+  requiredElement('[data-test="bob-sk"]').textContent = bytesToHex(bob.sessionKey)
+  panel.dataset.outcome = matched ? 'pass' : 'alarm'
+  verdict.classList.toggle('verdict-pass', matched)
+  verdict.classList.toggle('verdict-alarm', !matched)
+  title.textContent = matched
+    ? 'ALICE SK = BOB SK'
+    : 'ALICE SK DIFFERS FROM BOB SK — the 32 bytes below are not equal'
 }
 
 function setValue(testId: string, value: Uint8Array | undefined): void {
@@ -414,7 +443,7 @@ function setMaterialState(name: string, state: string, label: string): void {
 
 function currentSession() {
   if (!bobState || !bundle || !alice || !bob) return undefined
-  return { bobState, bundle, alice, bob, keysMatch: equalBytes(alice.sessionKey, bob.sessionKey) }
+  return { bobState, bundle, alice, bob, keysMatch: sessionKeysMatch(alice.sessionKey, bob.sessionKey) }
 }
 
 function renderThreatModel(): void {
@@ -428,7 +457,11 @@ function renderThreatModel(): void {
     for (const name of ['DH1', 'DH2', 'DH3', 'DH4', 'SS']) {
       setMaterialState(name, 'derived', 'HONEST INPUT')
     }
-    setMaterialState('SK', 'pass', 'MATCHED')
+    setMaterialState(
+      'SK',
+      session.keysMatch ? 'pass' : 'alarm',
+      session.keysMatch ? 'MATCHED' : 'DIVERGED',
+    )
     output.innerHTML = '<strong>NO MODEL ACTIVE</strong><span>Adversary inputs: public transcript only</span>'
     return
   }
@@ -492,8 +525,30 @@ requiredElement<HTMLInputElement>('#reuse-toggle').addEventListener('change', as
   const fallbackBundle = publishBundle(state, { useOneTimePq: false })
   const first = await runAlice(fallbackBundle)
   const second = await runAlice(fallbackBundle)
-  output.dataset.result = 'alarm'
-  output.innerHTML = `<strong>SAME PQ KEY ID — ${fallbackBundle.pqPrekeyId}</strong><span>Session SS values differ: ${shortHex(first.components.sharedSecret)} / ${shortHex(second.components.sharedSecret)}. Reuse does not reveal either SK by itself, but future compromise of this retained last-resort private key affects every session whose remaining inputs are also recovered.</span>`
+
+  // Measured, not narrated. "SAME PQ KEY ID" used to print whichever id the
+  // bundle happened to carry, without ever comparing the two sessions or
+  // checking that the served key was the last-resort one — a sentence true of
+  // the fixture by construction rather than by observation.
+  const checks: ReadonlyArray<readonly [string, boolean]> = [
+    ['served key is the last-resort key', fallbackBundle.pqPrekeyKind === 'last-resort'],
+    [
+      'both sessions cite one PQ prekey id',
+      first.message.pqPrekeyId === second.message.pqPrekeyId,
+    ],
+    [
+      'per-session SS still differ',
+      !equalBytes(first.components.sharedSecret, second.components.sharedSecret),
+    ],
+  ]
+  const verdicts = checks
+    .map(([name, passed]) => `${name}: ${passed ? 'PASS' : 'FAIL'}`)
+    .join(' · ')
+  const reused = checks.every(([, passed]) => passed)
+  output.dataset.result = reused ? 'alarm' : 'pass'
+  output.innerHTML = reused
+    ? `<strong>SAME PQ KEY ID — ${fallbackBundle.pqPrekeyId}</strong><span data-test="reuse-checks">${verdicts}</span><span>Session SS values differ: ${shortHex(first.components.sharedSecret)} / ${shortHex(second.components.sharedSecret)}. Reuse does not reveal either SK by itself, but future compromise of this retained last-resort private key affects every session whose remaining inputs are also recovered.</span>`
+    : `<strong>NO LAST-RESORT REUSE OBSERVED — a check did not report success</strong><span data-test="reuse-checks">${verdicts}</span>`
 })
 
 requiredElement<HTMLButtonElement>('#impersonate-button').addEventListener('click', async () => {

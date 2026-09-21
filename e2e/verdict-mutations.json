@@ -1,0 +1,64 @@
+{
+  "comment": [
+    "Every rendered verdict on this page carries data-verdict=\"<id>\". Each id below",
+    "is killed by at least one mutation recorded here: a single-token edit to real",
+    "source that forces the measured value the other way. A kill counts only when the",
+    "unmutated baseline passed in the same run and the failure is that verdict's own",
+    "assertion — not a build error, a blank page, or the whole suite going red.",
+    "verdict-coverage.spec.ts fails if the page renders a marker no mutation covers,",
+    "if a mutation names a marker the page never renders, or if a mutation's `find`",
+    "string no longer appears exactly once in its file (a rotted mutation guards",
+    "nothing). Run them with: node scripts/mutate.mjs <id>"
+  ],
+  "mutations": {
+    "session-keys-match": {
+      "file": "src/verify/match.ts",
+      "find": "  return equalBytes(aliceSessionKey, bobSessionKey)",
+      "replace": "  return !equalBytes(aliceSessionKey, bobSessionKey)",
+      "covers": ["handshake-status", "session-key-match", "session-key-state"],
+      "why": "Forces the one byte-for-byte comparison every SK verdict reads. All three surfaces must follow it."
+    },
+    "adversary-keeps-kem-secret": {
+      "file": "src/model/quantum.ts",
+      "find": "      ? { kemSharedSecret: session.alice.components.sharedSecret }",
+      "replace": "      ? {}",
+      "covers": ["adversary-model", "kdf-input-state"],
+      "why": "Withholds the modeled lattice break. The panel must stop claiming SK OPENED and the SS box must stop reading OPENED IN MODEL."
+    },
+    "alice-accepts-bad-pq-signature": {
+      "file": "src/pqxdh/alice.ts",
+      "find": "    throw new HandshakeAbort('Signed ML-KEM prekey signature verification failed')",
+      "replace": "    void 0",
+      "covers": ["prekey-signature-abort"],
+      "why": "Removes the authentication check the exhibit claims fires. The page must stop naming the rejection."
+    },
+    "bob-accepts-failed-aead": {
+      "file": "src/pqxdh/bob.ts",
+      "find": "    throw new HandshakeAbort(\n      'Initial AEAD authentication failed after ML-KEM implicit rejection',\n    )",
+      "replace": "    return { components, sessionKey, plaintext: new Uint8Array() }",
+      "covers": ["kem-tamper-abort"],
+      "why": "Accepts a forged tag. The tamper exhibit must stop reporting REJECTED AT FIRST AEAD."
+    },
+    "bundle-mislabels-last-resort": {
+      "file": "src/pqxdh/bundle.ts",
+      "find": "    pqPrekeyKind: useOneTimePq ? 'one-time' : 'last-resort',",
+      "replace": "    pqPrekeyKind: 'one-time',",
+      "covers": ["last-resort-reuse"],
+      "why": "Breaks one of the three facts the reuse verdict measures. SAME PQ KEY ID must not render."
+    },
+    "impersonation-signer-check": {
+      "file": "src/model/quantum.ts",
+      "find": "    bob.identitySigning.publicKey,",
+      "replace": "    attacker.identitySigning.publicKey,",
+      "covers": ["impersonation"],
+      "why": "Makes one of the four measured checks report FAIL. The headline must fall back to FIXTURE INVALID."
+    },
+    "ratchet-grant-is-not-a-recovery": {
+      "file": "src/model/ratchet-step.ts",
+      "find": "      ? { recoveredAliceSecret: alice.secretKey }",
+      "replace": "      ? { recoveredAliceSecret: x25519.keygen().secretKey }",
+      "covers": ["ratchet-heal"],
+      "why": "Hands the adversary a secret that is not the one behind the wire public key. The chain must stall and STILL READ must not render — this is the mutation the old tautological stillReadable could not fail."
+    }
+  }
+}

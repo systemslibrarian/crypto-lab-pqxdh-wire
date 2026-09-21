@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:a11y": "playwright test"
+    "test:a11y": "playwright test",
+    "test:verdicts": "playwright test e2e/verdicts.spec.ts e2e/verdict-coverage.spec.ts",
+    "mutate": "node scripts/mutate.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",

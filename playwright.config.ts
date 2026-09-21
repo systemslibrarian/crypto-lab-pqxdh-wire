@@ -13,7 +13,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run build && npm run preview -- --port 4667 --strictPort',
+    command: 'npm run build && npm run preview -- --port 4700 --strictPort',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
   },
