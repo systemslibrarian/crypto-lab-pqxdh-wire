@@ -499,10 +499,19 @@ requiredElement<HTMLInputElement>('#reuse-toggle').addEventListener('change', as
 requiredElement<HTMLButtonElement>('#impersonate-button').addEventListener('click', async () => {
   const output = requiredElement<HTMLOutputElement>('#impersonate-output')
   const fixture = await runImpersonationFixture()
+  const checks: ReadonlyArray<readonly [string, boolean]> = [
+    ['SPK_B Ed25519 signature', fixture.signedPrekeySignatureValid],
+    ['PQOPK_B Ed25519 signature', fixture.pqPrekeySignatureValid],
+    ["signer is Bob's identity key", fixture.signedByBobsIdentity],
+    ["Alice's initial AES-GCM message opened", fixture.initialMessageOpened],
+  ]
+  const verdicts = checks
+    .map(([name, passed]) => `${name}: ${passed ? 'PASS' : 'FAIL'}`)
+    .join(' · ')
   output.dataset.result = 'alarm'
   output.innerHTML = fixture.checksGreen
-    ? `<strong>PQ-CONFIDENTIAL — AND IMPERSONATED</strong><span>Every Ed25519 prekey signature and the initial AES-GCM check passed. The attacker derived ${shortHex(fixture.sessionKey)} with Alice.</span>`
-    : '<strong>Fixture failed to reach the authenticated state</strong>'
+    ? `<strong>PQ-CONFIDENTIAL — AND IMPERSONATED</strong><span data-test="impersonate-checks">${verdicts}</span><span>Each verdict above was measured after the handshake, not assumed. The attacker derived ${shortHex(fixture.sessionKey)} with Alice.</span>`
+    : `<strong>FIXTURE INVALID — a check did not report success</strong><span data-test="impersonate-checks">${verdicts}</span>`
 })
 
 requiredElement<HTMLButtonElement>('#ratchet-button').addEventListener('click', () => {
@@ -513,10 +522,19 @@ requiredElement<HTMLButtonElement>('#ratchet-button').addEventListener('click', 
     return
   }
   const result = runRatchetModel(session.alice.sessionKey, quantumToggle.checked)
-  output.dataset.result = result.stillReadable ? 'alarm' : 'pass'
+  // "HEALED" is now read off the measured chain rather than printed unconditionally.
+  const chain = result.honestRoots
+    .map((root) => bytesToHex(root.slice(0, 4)))
+    .join(' → ')
+  const roots = `<span data-test="ratchet-roots">Root chain: ${chain}</span>`
+  output.dataset.result = result.healed && !result.stillReadable ? 'pass' : 'alarm'
+  if (!result.healed) {
+    output.innerHTML = `<strong>DID NOT HEAL — root chain did not advance</strong>${roots}`
+    return
+  }
   output.innerHTML = result.stillReadable
-    ? '<strong>HEALED — AND STILL READ</strong><span>Three honest root updates completed; the curve-break model recomputed all three.</span>'
-    : '<strong>HEALED</strong><span>Three honest root updates completed; the classical observer remained at the compromised root.</span>'
+    ? `<strong>HEALED — AND STILL READ</strong>${roots}<span>Three honest root updates completed; the curve-break model recomputed all three.</span>`
+    : `<strong>HEALED</strong>${roots}<span>Three honest root updates completed; the classical observer remained at the compromised root.</span>`
 })
 
 renderHandshake()

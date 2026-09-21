@@ -88,8 +88,18 @@ test('keeps hidden states genuinely hidden', async ({ page }) => {
 test('reaches the authenticated impersonation negative-claim fixture', async ({ page }) => {
   await page.locator('#impersonate-button').click()
   await expect(page.locator('#impersonate-output')).toContainText('PQ-CONFIDENTIAL — AND IMPERSONATED')
-  await expect(page.locator('#impersonate-output')).toContainText('Every Ed25519 prekey signature and the initial AES-GCM check passed')
   await expect(page.getByText("Its prekey signature is classical", { exact: false })).toBeVisible()
+
+  // §4.1d assertion 2: every check the page performs in this state must report
+  // success on screen, read off the rendered verdicts rather than a flag.
+  const checks = page.locator('[data-test="impersonate-checks"]')
+  const rendered = (await checks.textContent()) ?? ''
+  const verdicts = rendered.split(' · ').map((entry) => entry.trim()).filter(Boolean)
+  expect(verdicts).toHaveLength(4)
+  expect(verdicts.every((entry) => entry.endsWith(': PASS'))).toBe(true)
+  await expect(checks).not.toContainText('FAIL')
+  await expect(checks).toContainText("signer is Bob's identity key: PASS")
+  await expect(checks).toContainText("Alice's initial AES-GCM message opened: PASS")
 })
 
 test('reaches both reduced-ratchet negative-claim outcomes', async ({ page }) => {
@@ -97,6 +107,18 @@ test('reaches both reduced-ratchet negative-claim outcomes', async ({ page }) =>
   await page.locator('#ratchet-button').click()
   await expect(page.locator('#ratchet-output')).toContainText('HEALED')
   await expect(page.locator('#ratchet-output')).not.toContainText('STILL READ')
+  await expect(page.locator('#ratchet-output')).not.toContainText('DID NOT HEAL')
+
+  // The HEALED verdict is evidence only if the chain it names actually moved:
+  // four roots, all distinct, starting at the compromised session key.
+  const compromised = (await page.locator('[data-test="alice-sk"]').textContent()) ?? ''
+  const chain = ((await page.locator('[data-test="ratchet-roots"]').textContent()) ?? '')
+    .replace('Root chain:', '')
+    .split('→')
+    .map((root) => root.trim())
+  expect(chain).toHaveLength(4)
+  expect(new Set(chain).size).toBe(4)
+  expect(chain[0]).toBe(compromised.slice(0, 8))
 
   await page.locator('#quantum-toggle').check()
   await page.locator('#ratchet-button').click()

@@ -147,6 +147,13 @@ describe('modeled limits', () => {
 
   it('shows classical signatures accepting an impersonated bundle', async () => {
     const fixture = await runImpersonationFixture()
+
+    // Assert the individual measurements, not just the summary. A summary that
+    // is a hardcoded literal agrees with any of these being false.
+    expect(fixture.signedPrekeySignatureValid).toBe(true)
+    expect(fixture.pqPrekeySignatureValid).toBe(true)
+    expect(fixture.signedByBobsIdentity).toBe(true)
+    expect(fixture.initialMessageOpened).toBe(true)
     expect(fixture.checksGreen).toBe(true)
     expect(fixture.sessionKey).toHaveLength(32)
   })
@@ -160,5 +167,14 @@ describe('modeled limits', () => {
     expect(classical.stillReadable).toBe(false)
     expect(quantum.healed).toBe(true)
     expect(quantum.stillReadable).toBe(true)
+
+    // `healed` must mean the chain moved, not that the loop ran a fixed number
+    // of times: every root is distinct and the last one is not the compromise.
+    const distinct = new Set(classical.honestRoots.map((root) => bytesToHex(root)))
+    expect(distinct.size).toBe(4)
+    expect(equalBytes(classical.honestRoots[0], compromisedRoot)).toBe(true)
+    expect(equalBytes(classical.honestRoots.at(-1)!, compromisedRoot)).toBe(false)
+    expect(classical.adversaryRoots).toHaveLength(1)
+    expect(quantum.adversaryRoots).toHaveLength(4)
   })
 })

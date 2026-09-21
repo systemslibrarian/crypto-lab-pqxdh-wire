@@ -51,10 +51,20 @@ export function runRatchetModel(
 
   const stillReadable =
     quantumBreak && equalBytes(honestRoots.at(-1)!, adversaryRoots.at(-1)!)
+  // Measured, not counted. `honestRoots.length === 4` is true by construction of
+  // the loop above, so it reported HEALED even if every step had left the root
+  // unchanged. Healing means each step actually replaced the root and the chain
+  // has left the compromised value behind.
+  const healed =
+    honestRoots.length === 4 &&
+    honestRoots.every(
+      (root, index) => index === 0 || !equalBytes(root, honestRoots[index - 1]),
+    ) &&
+    !equalBytes(honestRoots.at(-1)!, compromisedRoot)
   return {
     honestRoots,
     adversaryRoots,
-    healed: honestRoots.length === 4,
+    healed,
     stillReadable,
   }
 }

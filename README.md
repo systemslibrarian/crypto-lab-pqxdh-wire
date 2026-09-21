@@ -74,7 +74,7 @@ npm run test:a11y
 
 The repository has **25 executable tests**: 15 Vitest unit/correctness tests and 10 Playwright accessibility/claims tests.
 
-V8 coverage over the cryptographic, protocol, model, and verification modules is 92.63% statements, 89.79% branches, 87.5% functions, and 93.4% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
+V8 coverage over the cryptographic, protocol, model, and verification modules is 93.06% statements, 91.37% branches, 87.5% functions, and 93.81% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
 
 Three specification known-answer tests are pinned in source:
 
