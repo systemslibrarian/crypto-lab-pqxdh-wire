@@ -1,64 +1,120 @@
 {
   "comment": [
-    "Every rendered verdict on this page carries data-verdict=\"<id>\". Each id below",
-    "is killed by at least one mutation recorded here: a single-token edit to real",
-    "source that forces the measured value the other way. A kill counts only when the",
-    "unmutated baseline passed in the same run and the failure is that verdict's own",
-    "assertion — not a build error, a blank page, or the whole suite going red.",
-    "verdict-coverage.spec.ts fails if the page renders a marker no mutation covers,",
-    "if a mutation names a marker the page never renders, or if a mutation's `find`",
-    "string no longer appears exactly once in its file (a rotted mutation guards",
-    "nothing). Run them with: node scripts/mutate.mjs <id>"
+    "Every rendered verdict on this page carries data-verdict=\"<id>\" and every rendered",
+    "measurement carries data-claim=\"<id>\". Each id below is killed by at least one",
+    "mutation recorded here: a single-token edit to real source that forces the measured",
+    "value the other way. A kill counts only when the unmutated baseline passed in the",
+    "same run and the failure is that marker's own assertion — not a build error, a blank",
+    "page, or the whole suite going red.",
+    "verdict-coverage.spec.ts fails if the page renders a marker of EITHER family that no",
+    "mutation covers, if a mutation names a marker the page never renders, if a covered id",
+    "is not asserted through expectVerdict/expectClaim (which refuse a text-only claim), or",
+    "if a mutation's `find` string no longer appears exactly once in its file (a rotted",
+    "mutation guards nothing). Run them with: node scripts/mutate.mjs <id>"
   ],
   "mutations": {
     "session-keys-match": {
       "file": "src/verify/match.ts",
       "find": "  return equalBytes(aliceSessionKey, bobSessionKey)",
       "replace": "  return !equalBytes(aliceSessionKey, bobSessionKey)",
-      "covers": ["handshake-status", "session-key-match", "session-key-state"],
+      "covers": [
+        "handshake-status",
+        "session-key-match",
+        "session-key-state"
+      ],
       "why": "Forces the one byte-for-byte comparison every SK verdict reads. All three surfaces must follow it."
     },
     "adversary-keeps-kem-secret": {
       "file": "src/model/quantum.ts",
       "find": "      ? { kemSharedSecret: session.alice.components.sharedSecret }",
       "replace": "      ? {}",
-      "covers": ["adversary-model", "kdf-input-state"],
+      "covers": [
+        "adversary-model",
+        "kdf-input-state"
+      ],
       "why": "Withholds the modeled lattice break. The panel must stop claiming SK OPENED and the SS box must stop reading OPENED IN MODEL."
     },
     "alice-accepts-bad-pq-signature": {
       "file": "src/pqxdh/alice.ts",
       "find": "    throw new HandshakeAbort('Signed ML-KEM prekey signature verification failed')",
       "replace": "    void 0",
-      "covers": ["prekey-signature-abort"],
+      "covers": [
+        "prekey-signature-abort"
+      ],
       "why": "Removes the authentication check the exhibit claims fires. The page must stop naming the rejection."
     },
     "bob-accepts-failed-aead": {
       "file": "src/pqxdh/bob.ts",
       "find": "    throw new HandshakeAbort(\n      'Initial AEAD authentication failed after ML-KEM implicit rejection',\n    )",
       "replace": "    return { components, sessionKey, plaintext: new Uint8Array() }",
-      "covers": ["kem-tamper-abort"],
+      "covers": [
+        "kem-tamper-abort"
+      ],
       "why": "Accepts a forged tag. The tamper exhibit must stop reporting REJECTED AT FIRST AEAD."
     },
     "bundle-mislabels-last-resort": {
       "file": "src/pqxdh/bundle.ts",
       "find": "    pqPrekeyKind: useOneTimePq ? 'one-time' : 'last-resort',",
       "replace": "    pqPrekeyKind: 'one-time',",
-      "covers": ["last-resort-reuse"],
+      "covers": [
+        "last-resort-reuse"
+      ],
       "why": "Breaks one of the three facts the reuse verdict measures. SAME PQ KEY ID must not render."
     },
     "impersonation-signer-check": {
       "file": "src/model/quantum.ts",
       "find": "    bob.identitySigning.publicKey,",
       "replace": "    attacker.identitySigning.publicKey,",
-      "covers": ["impersonation"],
+      "covers": [
+        "impersonation"
+      ],
       "why": "Makes one of the four measured checks report FAIL. The headline must fall back to FIXTURE INVALID."
     },
     "ratchet-grant-is-not-a-recovery": {
       "file": "src/model/ratchet-step.ts",
       "find": "      ? { recoveredAliceSecret: alice.secretKey }",
       "replace": "      ? { recoveredAliceSecret: x25519.keygen().secretKey }",
-      "covers": ["ratchet-heal"],
+      "covers": [
+        "ratchet-heal"
+      ],
       "why": "Hands the adversary a secret that is not the one behind the wire public key. The chain must stall and STILL READ must not render — this is the mutation the old tautological stillReadable could not fail."
+    },
+    "wire-counts-the-aead-not-the-kem": {
+      "file": "src/verify/wire.ts",
+      "find": "    kemCiphertextBytes: message.kemCiphertext.length,",
+      "replace": "    kemCiphertextBytes: message.aeadCiphertext.length,",
+      "covers": [
+        "wire-kem-ct-bytes"
+      ],
+      "why": "Reports the AEAD ciphertext where the strip says KEM CT. The rendered 1,568 B must follow the ML-KEM ciphertext actually sent, not whichever byte string is nearest."
+    },
+    "wire-search-matches-anything": {
+      "file": "src/verify/wire.ts",
+      "find": "      if (haystack[start + index] !== needle[index]) {",
+      "replace": "      if (haystack[start + index] === needle[index]) {",
+      "covers": [
+        "wire-secrecy",
+        "wire-secret-bytes"
+      ],
+      "why": "Inverts the byte comparison the secret search rests on, so every secret 'appears' on the wire. NO SECRET ON THE WIRE must stop rendering and the found-bytes count must move off 0 — this is the mutation a hard-coded '0 B' could not fail."
+    },
+    "wire-counts-secrets-not-their-bytes": {
+      "file": "src/verify/wire.ts",
+      "find": "  const scannedSecretBytes = secrets.reduce((total, secret) => total + secret.length, 0)",
+      "replace": "  const scannedSecretBytes = secrets.length",
+      "covers": [
+        "wire-scanned-secret-bytes"
+      ],
+      "why": "Reports how many secrets were searched as though it were how many bytes. The anti-vacuity number beside 'found none' has to be the summed width of what was actually searched."
+    },
+    "wire-ad-measures-only-the-x3dh-prefix": {
+      "file": "src/verify/wire.ts",
+      "find": "    associatedDataBytes: associatedData.length,",
+      "replace": "    associatedDataBytes: associatedData.subarray(0, 2 * message.aliceIdentityPublic.length).length,",
+      "covers": [
+        "wire-ad-bytes"
+      ],
+      "why": "Measures only the two X25519 identity keys X3DH bound, dropping the ML-KEM public key PQXDH Revision 3 adds to AD. The AD size the page shows must be the length of the buffer the AEAD really authenticated. (An earlier form of this mutation deleted the associatedData read entirely; that failed `tsc` instead of the assertion, which is a build error and not a kill.)"
     }
   }
 }
