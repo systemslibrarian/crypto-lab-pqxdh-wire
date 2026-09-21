@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test'
 
-const baseURL = 'http://localhost:4667/crypto-lab-pqxdh-wire/'
+const baseURL = 'http://localhost:4700/crypto-lab-pqxdh-wire/'
 
 export default defineConfig({
   testDir: './e2e',
