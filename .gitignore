@@ -6,3 +6,8 @@ coverage/
 *.tsbuildinfo
 *.log
 .DS_Store
+# The fleet master template is a local, gitignored working copy (audits/kickoff.md).
+# A committed copy ages silently into a second, wrong standard.
+template.md
+CRYPTO-LAB-TEMPLATE*.md
+_MASTER-TEMPLATE.md
