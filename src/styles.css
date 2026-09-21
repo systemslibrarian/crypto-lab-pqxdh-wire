@@ -130,9 +130,16 @@ body {
 .step-track li[data-complete="true"] span { color: var(--cyan); }
 
 .protocol-status { min-height: 2.8rem; display: flex; align-items: center; margin-bottom: 1rem; border-left: 3px solid var(--accent); padding: .7rem 1rem; background: var(--surface); color: var(--text-dim); font: 500 .78rem/1.45 'DM Mono', monospace; }
+.protocol-status[data-result="pass"] { border-left-color: var(--success); }
+.protocol-status[data-result="alarm"] { border-left-color: var(--alarm); }
 .bundle-strip, .message-strip { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1rem 0; border: 1px solid var(--border); padding: 1rem; background: var(--surface); animation: reveal .28s ease-out both; }
 .bundle-strip strong, .message-strip strong { display: block; margin-top: .25rem; font-size: .9rem; }
 .bundle-values, .message-metrics { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 0; }
+/* The wire measurement reads as the verdict it is: its colour follows the
+   measured secret-byte count, so a mutation cannot flip the sentence alone. */
+.wire-verdict { margin: .5rem 0 0; color: var(--text-dim); font: 500 .7rem/1.5 'DM Mono', monospace; }
+.wire-verdict[data-result="pass"] { color: var(--success); }
+.wire-verdict[data-result="alarm"] { color: var(--alarm); }
 .bundle-values div, .message-metrics div { min-width: 5rem; }
 .bundle-values dt, .message-metrics dt, .key-compare dt { color: var(--text-muted); font-size: .68rem; }
 .bundle-values dd, .message-metrics dd { margin: .2rem 0 0; color: var(--gold); font-size: .75rem; }
@@ -187,6 +194,12 @@ body {
 
 .recompute-panel { display: grid; grid-template-columns: minmax(14rem, .8fr) minmax(16rem, 1.2fr); gap: 1rem; min-height: 5rem; margin-top: 1rem; border-left: 3px solid var(--alarm); padding: 1rem; background: var(--surface-raised); }
 .recompute-panel strong { color: var(--alarm); font: 500 .78rem/1.4 'DM Mono', monospace; }
+.recompute-panel[data-result="pending"] { border-left-color: var(--border-strong); }
+.recompute-panel[data-result="pending"] strong { color: var(--text-dim); }
+.recompute-panel[data-result="pass"] { border-left-color: var(--success); }
+.recompute-panel[data-result="pass"] strong { color: var(--success); }
+.recompute-panel[data-result="locked"] { border-left-color: var(--locked); }
+.recompute-panel[data-result="locked"] strong { color: var(--locked); }
 .recompute-panel span { min-width: 0; color: var(--text-dim); font: .7rem/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
 .what-this-isnt { margin: 1rem 0 0; color: var(--text-muted); font-size: .84rem; }
 .what-this-isnt strong { color: var(--text-dim); }
@@ -199,6 +212,7 @@ body {
 .fixture-output span { margin-top: .35rem; }
 .fixture-output[data-result="alarm"] { border-left-color: var(--alarm); color: #ffc1a8; }
 .fixture-output[data-result="pass"] { border-left-color: var(--success); color: var(--success); }
+.fixture-output[data-result="invalid"] { border-left-color: var(--locked); }
 .limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border: 1px solid var(--border); background: var(--border); }
 .limit-item .model-badge { margin-bottom: .3rem; }
 

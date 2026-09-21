@@ -30,7 +30,7 @@ Do not use this code as a messaging protocol, a libsignal-compatible implementat
 
 Complete the five handshake steps, inspect every KDF input, enable each adversary capability, then run the signature, KEM-ciphertext, prekey-reuse, impersonation, and ratchet fixtures.
 
-Every outcome the page renders carries a `data-verdict` marker, and every marker is killed by a recorded mutation (below). No verdict on this page is a constant.
+Every outcome the page renders carries a `data-verdict` marker and every number it renders carries a `data-claim` marker, and every marker of either kind is killed by a recorded mutation (below). No verdict and no measurement on this page is a constant.
 
 ## What Can Go Wrong
 
@@ -85,9 +85,9 @@ npm run mutate revert ratchet-grant-is-not-a-recovery
 
 ## Build & Verify
 
-The repository has **40 executable tests**: 16 Vitest unit/correctness tests and 24 Playwright tests (2 accessibility, 8 claims, 10 per-verdict, 4 verdict-coverage).
+The repository has **49 executable tests**: 22 Vitest unit/correctness tests and 27 Playwright tests (2 accessibility, 8 claims, 12 per-marker, 5 verdict-coverage).
 
-V8 coverage over the cryptographic, protocol, model, and verification modules is 93.75% statements, 92.42% branches, 88.88% functions, and 94.28% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
+V8 coverage over the cryptographic, protocol, model, and verification modules is 94.77% statements, 93.24% branches, 90.32% functions, and 95.04% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
 
 Three specification known-answer tests are pinned in source:
 
@@ -111,30 +111,60 @@ So coverage here is derived from the rendered page, never from a list written by
 hand:
 
 - Every element that renders an outcome carries `data-verdict="<id>"`. There are
-  ten: `handshake-status`, `session-key-match`, `session-key-state`,
+  eleven: `handshake-status`, `session-key-match`, `session-key-state`,
   `kdf-input-state`, `adversary-model`, `prekey-signature-abort`,
-  `kem-tamper-abort`, `last-resort-reuse`, `impersonation`, `ratchet-heal`.
-- `e2e/verdicts.spec.ts` asserts what each marker renders, one test per marker.
+  `kem-tamper-abort`, `last-resort-reuse`, `impersonation`, `ratchet-heal`,
+  `wire-secrecy`.
+- Every element that renders a measurement carries `data-claim="<id>"`, with the
+  machine value in `data-value`. There are four: `wire-kem-ct-bytes`,
+  `wire-ad-bytes`, `wire-scanned-secret-bytes`, `wire-secret-bytes`. A rendered
+  number is a claim in exactly the way a rendered word is, and it is the easier
+  one to leave unchecked, because a number does not look like a claim. Three of
+  them were `1,568 B`, `1,632 B` and `0 B` written into the page template until
+  this pass — and `0 B`, the strongest claim the exhibit makes, was a literal
+  about nothing. `wire-scanned-secret-bytes` is new: a search reporting "found
+  none" is evidence only if the page also says how much it looked for.
+- `e2e/verdicts.spec.ts` asserts what each marker renders **and the state it
+  paints**, together, through `expectVerdict` / `expectClaim`. The helper
+  refuses a text-only claim: a mutation that flips the words while leaving
+  `data-result="pass"` in place would otherwise be recorded as a kill, and the
+  marker would go on claiming pass in every way a reader can see except the
+  sentence.
 - `e2e/verdict-mutations.json` records the mutations that kill them — a
   single-token edit to real source that forces the measured value the other way.
-- `e2e/verdict-coverage.spec.ts` walks every state the page can reach and fails
-  on a rendered marker no mutation covers, on a mutation naming a marker the
-  page never renders, on a mutation whose `find` no longer matches its file, and
-  on any verdict word or verdict styling rendered outside a marker. Its third
-  test injects a raw unmarked banner the way a careless builder would and fails
-  if the scanner stays quiet.
+- `e2e/drive-every-state.ts` is the denominator, not a test. It visits every
+  option of every control that changes what renders — each control on its own,
+  not the full cross-product — because a marker that appears only in a state the
+  walk never reaches is outside the set the coverage rules judge. The table in
+  that file lists every control and what it owes, and names the three controls
+  deliberately skipped with the reason.
+- `e2e/verdict-coverage.spec.ts` enumerates over that walk and fails on a
+  rendered marker of **either** family that no mutation covers, on a mutation
+  naming a marker the page never renders, on a covered id that no
+  `expectVerdict` / `expectClaim` call asserts, on a mutation whose `find` no
+  longer matches its file, and on any verdict word, verdict styling **or
+  digit-plus-unit measurement** rendered outside a marker in a result region.
+  Its fourth test injects both a raw unmarked banner and a raw unmarked number
+  the way a careless builder would, and fails if the scanner stays quiet.
 
 A kill counts only when the unmutated baseline passed in the same run, the
 failure is that verdict's own assertion rather than a build error or a blank
-page, and the server served the mutated code. All seven recorded mutations were
-run that way; each failed exactly the markers it claims to cover and nothing
-else.
+page, and the server served the mutated code. All eleven recorded mutations were
+run that way, with `CI=1`; each failed the markers it claims to cover, on those
+markers' own assertions, and no other per-marker test. Several also turn the
+coverage walk red, which is expected rather than collateral damage: the walk
+asserts the intermediate states it steps through, and `every recorded mutation
+still applies to the source it names` necessarily fails while a mutation is
+applied, because the `find` string it looks for is the line the mutation just
+replaced.
 
-`verdict-gate` is a separate job so it is a separate check, it is a required
-status check on `main`, and `deploy` and `dependabot-auto-merge` both list it in
-`needs:`. Auto-merge waits only on required checks, and `needs:` also covers a
-direct push to `main`, which skips pull-request checks entirely. CI blocks
-deployment unless every check passes.
+`verdict-gate` is a separate job so it is a separate check, and `deploy` and
+`dependabot-auto-merge` both list it in `needs:`. `main` here carries no branch
+protection, so it is not a *required* status check — `needs:` is what actually
+holds, and it covers a direct push to `main`, which skips pull-request checks
+entirely. Whether protection spreads beyond this fleet's three pilot labs is the
+maintainer's call and is deliberately not changed from inside this lane. CI
+blocks deployment unless every check passes.
 
 Primary sources: [PQXDH Revision 3](https://signal.org/docs/specifications/pqxdh/), [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748), [RFC 5869](https://www.rfc-editor.org/rfc/rfc5869), [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final), and [Bhargavan et al., USENIX Security 2024](https://www.usenix.org/conference/usenixsecurity24/presentation/bhargavan).
 
