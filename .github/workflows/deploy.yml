@@ -8,8 +8,16 @@ on:
   workflow_dispatch:
 
 concurrency:
+  # Per-ref, so a pull request run can never cancel a live main deploy.
   group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs only. A deploy-bearing run must never be cancelled:
+  # two Dependabot auto-merges landing seconds apart each dispatch a run into this
+  # group, and with unconditional cancel-in-progress the earlier one is killed
+  # mid-deploy. That happened here on 2026-09-11 — run 34642424003 was cancelled
+  # five seconds before 34642430702 started, and neither shipped. A `cancelled`
+  # run is one of the two shapes that hid the 2026-08-20 fleet-wide staleness,
+  # because it reads as "a run existed" while nothing was published.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -79,7 +87,10 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             gh pr merge --squash --delete-branch "$PR_URL" && merged=1 && break
-            sleep 15
+            sleep 15   # a sibling PR merging first moves main under us
           done
-          [[ -n "$merged" ]] || { echo "::warning::gate passed, merge did not land"; exit 0; }
+          # Fail loudly. `exit 0` here leaves a green job, an open PR with a passing
+          # gate, and an annotation nobody reads — structurally the same swallow that
+          # hid four separate non-deploy bugs across the fleet on 2026-08-20.
+          [[ -n "$merged" ]] || { echo "::error::gate passed but the merge did not land after 3 attempts"; exit 1; }
           gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
