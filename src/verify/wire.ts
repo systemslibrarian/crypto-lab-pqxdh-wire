@@ -56,9 +56,17 @@ export function measureWire(
   for (const secret of secrets) {
     if (containsBytes(wire, secret)) secretBytesOnWire += secret.length
   }
-  // Summed over the secrets actually searched, never a count multiplied by an
-  // assumed width. A search that reports "nothing found" is only evidence if
-  // the page can also say how much it looked for.
+  // A search that reports "nothing found" is only evidence if the page can also
+  // say how much it looked for, which is what this number is for.
+  //
+  // Each secret contributes its own length, so the total stays right for a run
+  // that searched values of different widths. The exhibit cannot DEMONSTRATE
+  // that difference: every secret it searches is 32 B, so `secrets.length * 32`
+  // renders the identical 192 B and survives every assertion on this page. This
+  // comment used to read "never a count multiplied by an assumed width", which
+  // asserted a distinction no test here can observe — the same unbacked
+  // mechanism claim this lane removed from rendered copy, in a source comment.
+  // The sum is a property of the code, not a result the run exhibits.
   const scannedSecretBytes = secrets.reduce((total, secret) => total + secret.length, 0)
   return {
     kemCiphertextBytes: message.kemCiphertext.length,

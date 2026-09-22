@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { expectClaim, expectVerdict } from './expect-verdict.js'
 
@@ -71,7 +71,12 @@ test('session-key-match renders the byte-for-byte verdict, not a canned banner',
     result: 'pass',
     klass: /verdict-pass/,
   })
-  await expect(page.locator('#comparison-panel')).toHaveAttribute('data-outcome', 'pass')
+  // The panel's own `data-outcome` hook used to be asserted here with a loose
+  // `toHaveAttribute`, outside the helper and outside the marker. It is gone:
+  // the card's face is keyed off this marker's `data-result`, which the claim
+  // above asserts, so there is one attribute and one claim rather than two
+  // states that could disagree. `[data-outcome]` stays in VERDICT_STYLE_SELECTOR
+  // so a replacement cannot arrive unmarked.
 
   const alice = await page.locator('[data-test="alice-sk"]').textContent()
   const bob = await page.locator('[data-test="bob-sk"]').textContent()
@@ -209,6 +214,15 @@ test('impersonation reports four measured checks, not a flag', async ({ page }) 
   expect(checks.every((entry) => entry.endsWith(': PASS'))).toBe(true)
 })
 
+/** The root chain as the page rendered it — the only chain this oracle has. */
+async function readRootChain(output: Locator): Promise<string[]> {
+  return ((await output.locator('[data-test="ratchet-roots"]').textContent()) ?? '')
+    .replace('Root chain:', '')
+    .split('→')
+    .map((root) => root.trim())
+    .filter(Boolean)
+}
+
 test('ratchet-heal reaches both outcomes from a chain that is always built', async ({
   page,
 }) => {
@@ -223,19 +237,42 @@ test('ratchet-heal reaches both outcomes from a chain that is always built', asy
   })
 
   const compromised = (await page.locator('[data-test="alice-sk"]').textContent()) ?? ''
-  const chain = ((await output.locator('[data-test="ratchet-roots"]').textContent()) ?? '')
-    .replace('Root chain:', '')
-    .split('→')
-    .map((root) => root.trim())
+  const chain = await readRootChain(output)
   expect(chain).toHaveLength(4)
   expect(new Set(chain).size).toBe(4)
   expect(chain[0]).toBe(compromised.slice(0, 8))
+
+  // The COUNT beside the chain, compared to the chain this test just measured.
+  // It was the English word "Three" in a sentence no oracle read, while
+  // `runRatchetModel` built the chain from `step < 3`; the two agreed by
+  // coincidence, and an auditor rendered "Seven honest root updates completed"
+  // over a four-root chain with this suite green at 25 passed. A chain of N
+  // roots is N-1 updates, whatever N is.
+  await expectClaim(page, 'ratchet-honest-updates', {
+    text: String(chain.length - 1),
+    value: String(chain.length - 1),
+  })
+  // No model granted: the classical observer advanced no root at all, so the
+  // "remained at the compromised root" clause beside it has a number behind it.
+  await expectClaim(page, 'ratchet-model-updates', { text: '0', value: '0' })
 
   await page.locator('#quantum-toggle').check()
   await page.locator('#ratchet-button').click()
   await expectVerdict(page, 'ratchet-heal', {
     contains: 'HEALED — AND STILL READ',
     result: 'alarm',
+  })
+  const broken = await readRootChain(output)
+  expect(broken).toHaveLength(4)
+  await expectClaim(page, 'ratchet-honest-updates', {
+    text: String(broken.length - 1),
+    value: String(broken.length - 1),
+  })
+  // STILL READ means the model matched the chain the whole way, so what it
+  // recomputed is the honest update count — measured, not the word "all".
+  await expectClaim(page, 'ratchet-model-updates', {
+    text: String(broken.length - 1),
+    value: String(broken.length - 1),
   })
 })
 
@@ -244,12 +281,13 @@ test('ratchet-heal reaches both outcomes from a chain that is always built', asy
  * `0 B` written into the page template, so the strongest claim the exhibit
  * makes — that no secret crossed the wire — was a literal about nothing.
  *
- * The oracle for the searched-bytes total is deliberately a SUM over the page's
- * own rendered KDF inputs, never `inputCount × 32`. A count multiplied by an
- * assumed width cannot distinguish "summed the six values actually searched"
- * from "multiplied one width out", which is exactly the distinction the sentence
- * beside it claims — and it is the shape that breaks silently the moment a run
- * omits DH4 because the one-time prekey is exhausted.
+ * The oracle for the searched-bytes total sums the page's own rendered KDF
+ * inputs at their own widths rather than reading the figure off the strip under
+ * test. It cannot DEMONSTRATE the difference between that sum and one width
+ * multiplied out: every secret this exhibit searches is 32 B, so the two produce
+ * the identical 192 B and no assertion here can separate them. The sum is the
+ * shape that stays right if a run ever omits DH4 because the one-time prekey is
+ * exhausted — a property of the oracle, not a result it exhibits.
  */
 const X25519_PUBLIC_KEY_BYTES = 32 // RFC 7748 §5
 const ML_KEM_1024_BYTES = 1568 // FIPS 203: ML-KEM-1024 ek and c are both 1568 B

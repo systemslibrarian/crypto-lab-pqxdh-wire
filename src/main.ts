@@ -474,11 +474,9 @@ function renderWire(): void {
  * page stated the outcome of a comparison it never made.
  */
 function renderComparison(): void {
-  const panel = requiredElement<HTMLElement>('#comparison-panel')
   const verdict = requiredElement<HTMLElement>('#comparison-verdict')
   const title = requiredElement<HTMLElement>('#comparison-title')
   if (step < 5 || !alice || !bob) {
-    panel.dataset.outcome = 'pending'
     verdict.dataset.result = 'pending'
     verdict.classList.remove('verdict-pass', 'verdict-alarm')
     title.textContent = 'Session keys not compared yet'
@@ -487,7 +485,12 @@ function renderComparison(): void {
   const matched = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
   requiredElement('[data-test="alice-sk"]').textContent = bytesToHex(alice.sessionKey)
   requiredElement('[data-test="bob-sk"]').textContent = bytesToHex(bob.sessionKey)
-  panel.dataset.outcome = matched ? 'pass' : 'alarm'
+  // The card's losing face is keyed off the MARKER's own data-result, not off a
+  // second `data-outcome` hook on the panel that sits outside every marker. That
+  // hook was invisible to the outside-marker scan — it was neither in
+  // VERDICT_STYLE_SELECTOR nor inside a data-verdict element — so it could have
+  // gone on painting pass with the marker saying alarm and nothing would have
+  // reported it. One attribute, asserted through expectVerdict, is the claim.
   verdict.dataset.result = matched ? 'pass' : 'alarm'
   verdict.classList.toggle('verdict-pass', matched)
   verdict.classList.toggle('verdict-alarm', !matched)
@@ -657,14 +660,28 @@ requiredElement<HTMLButtonElement>('#ratchet-button').addEventListener('click', 
     .map((root) => bytesToHex(root.slice(0, 4)))
     .join(' → ')
   const roots = `<span data-test="ratchet-roots">Root chain: ${chain}</span>`
+  // COUNTED off the two chains the model actually built, not typed beside them.
+  // These were the English words "Three" and "all three" while `runRatchetModel`
+  // built its chain from `for (let step = 0; step < 3; ...)`, so the sentence and
+  // the chain agreed only by coincidence: an auditor set them to "Seven" and "all
+  // seven" over a four-root chain and every check stayed green at 25 passed. Each
+  // count is a marked measurement with its machine value beside it, so the spec's
+  // oracle can compare what is rendered to the chain it measures, and neither can
+  // drift without the other.
+  const honestUpdates = result.honestRoots.length - 1
+  const modelUpdates = result.adversaryRoots.length - 1
+  const counted = (id: string, value: number): string =>
+    `<span data-claim="${id}" data-value="${value}">${value}</span>`
+  const honest = counted('ratchet-honest-updates', honestUpdates)
+  const model = counted('ratchet-model-updates', modelUpdates)
   output.dataset.result = result.healed && !result.stillReadable ? 'pass' : 'alarm'
   if (!result.healed) {
     output.innerHTML = `<strong>DID NOT HEAL — root chain did not advance</strong>${roots}`
     return
   }
   output.innerHTML = result.stillReadable
-    ? `<strong>HEALED — AND STILL READ</strong>${roots}<span>Three honest root updates completed; the curve-break model recomputed all three.</span>`
-    : `<strong>HEALED</strong>${roots}<span>Three honest root updates completed; the classical observer remained at the compromised root.</span>`
+    ? `<strong>HEALED — AND STILL READ</strong>${roots}<span>${honest} honest root updates completed; the curve-break model recomputed ${model} of them.</span>`
+    : `<strong>HEALED</strong>${roots}<span>${honest} honest root updates completed; the classical observer recomputed ${model} of them and remained at the compromised root.</span>`
 })
 
 renderHandshake()

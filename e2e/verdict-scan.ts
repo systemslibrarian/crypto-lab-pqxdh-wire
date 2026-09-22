@@ -55,9 +55,19 @@ export const VERDICT_WORDS = [
   'VERIFIED',
 ] as const
 
-/** Anything that paints an outcome: the verdict block, result and state hooks. */
+/**
+ * Anything that paints an outcome: the verdict block, result and state hooks.
+ *
+ * `[data-outcome]` is in this list because of one that was not. `#comparison-panel`
+ * carried `data-outcome="pass" | "alarm"` as a CSS state hook, outside every
+ * `data-verdict` element and outside this selector, so the rule below could not
+ * see it: it could have gone on painting the whole card pass while the marker
+ * inside it said alarm, and nothing would have reported it. That hook is gone —
+ * the card is keyed off the marker's own `data-result` now — and the attribute
+ * name stays here so a second one cannot arrive unmarked.
+ */
 export const VERDICT_STYLE_SELECTOR =
-  '[class*="verdict"], [data-result], [data-state], [data-state-label]'
+  '[class*="verdict"], [data-result], [data-state], [data-state-label], [data-outcome]'
 
 /**
  * Where the page reports on a run. A rendered number is a claim in exactly the
