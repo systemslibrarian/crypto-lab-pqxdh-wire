@@ -1,4 +1,6 @@
-import { expect, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+import { canonicalClaim, recordObservation, runId } from './observations.js'
 
 /**
  * A marker's text and its state are ONE claim.
@@ -10,9 +12,17 @@ import { expect, type Locator, type Page } from '@playwright/test'
  * single call and REFUSES a claim that carries only one of them, so the weak
  * shape cannot be written by accident.
  *
- * verdict-coverage.spec.ts then requires every mutation-covered marker to be
- * asserted through this helper — a mention of `data-verdict="<id>"` in the spec
- * source is not an assertion and never was.
+ * Each call that passes then RECORDS itself — the test that ran it, the marker
+ * it asserted and the claim it asserted — into the run-scoped sink in
+ * e2e/observations.ts. `globalTeardown` requires every recorded kill in
+ * e2e/verdict-mutations.json to appear in that sink. The rule it replaces read
+ * the spec's own source for the substring `expectVerdict(page, '<id>'`, which a
+ * comment satisfies, an unrelated line elsewhere in the file satisfies, and a
+ * tautological argument passes — see e2e/observations.ts for what each of those
+ * escapes does now.
+ *
+ * Recording happens AFTER the assertions, never before: "observed" means the
+ * claim executed and held, not that a call was reached.
  */
 export interface VerdictClaim {
   /** Assert against this descendant of the marker rather than the marker itself. */
@@ -36,6 +46,16 @@ const list = (value: string | readonly string[] | undefined): readonly string[] 
 function scopeFor(marker: Locator, claim: VerdictClaim): { state: Locator; text: Locator } {
   const state = claim.within ? marker.locator(claim.within) : marker
   return { state, text: claim.label ? state.locator(claim.label) : state }
+}
+
+function observe(kind: 'verdict' | 'claim', id: string, claim: Readonly<Record<string, unknown>>): void {
+  recordObservation({
+    run: runId(),
+    test: test.info().title,
+    kind,
+    id,
+    claim: canonicalClaim(claim),
+  })
 }
 
 export async function expectVerdict(
@@ -64,6 +84,8 @@ export async function expectVerdict(
     if (claim.result !== undefined) await expect(state).toHaveAttribute('data-result', claim.result)
     if (claim.state !== undefined) await expect(state).toHaveAttribute('data-state', claim.state)
     if (claim.klass !== undefined) await expect(state).toHaveClass(claim.klass)
+
+    observe('verdict', id, claim)
   }
 }
 
@@ -91,4 +113,6 @@ export async function expectClaim(
   if (claim.text !== undefined) await expect(marker).toHaveText(claim.text)
   for (const fragment of list(claim.contains)) await expect(marker).toContainText(fragment)
   await expect(marker).toHaveAttribute('data-value', claim.value)
+
+  observe('claim', id, claim)
 }

@@ -208,8 +208,11 @@ body {
 .break-item, .limit-item { min-width: 0; padding: clamp(1rem, 2vw, 1.4rem); background: var(--surface); }
 .break-item p, .limit-item p { margin: 0 0 1rem; color: var(--text-dim); font-size: .88rem; }
 .fixture-output { display: block; min-height: 4.25rem; margin-top: 1rem; border-left: 2px solid var(--border-strong); padding: .75rem; background: var(--surface-raised); color: var(--text-muted); font-size: .67rem; line-height: 1.5; overflow-wrap: anywhere; }
-.fixture-output strong, .fixture-output span { display: block; }
-.fixture-output span { margin-top: .35rem; }
+/* Direct children only. The ratchet sentence now carries its measured counts in
+   nested `data-claim` spans, and a descendant selector here would break each
+   number onto its own line mid-sentence. */
+.fixture-output > strong, .fixture-output > span { display: block; }
+.fixture-output > span { margin-top: .35rem; }
 .fixture-output[data-result="alarm"] { border-left-color: var(--alarm); color: #ffc1a8; }
 .fixture-output[data-result="pass"] { border-left-color: var(--success); color: var(--success); }
 .fixture-output[data-result="invalid"] { border-left-color: var(--locked); }
@@ -283,8 +286,11 @@ td { color: var(--text-dim); font: .72rem/1.45 'DM Mono', monospace; }
 }
 /* The byte-for-byte verdict is rendered from the comparison, so it needs a
    losing face as well as a winning one. Reached only when Alice and Bob derive
-   different session keys. */
-.comparison[data-outcome="alarm"] { border-color: var(--alarm); background: color-mix(in oklab, var(--alarm) 8%, var(--surface)); }
-.comparison[data-outcome="alarm"] .verdict { border-bottom-color: var(--alarm); }
+   different session keys. Keyed off the MARKER's own data-result: the panel used
+   to carry a second `data-outcome` state hook of its own, outside every
+   data-verdict marker and outside VERDICT_STYLE_SELECTOR, so nothing checked it
+   and nothing would have noticed it disagreeing with the verdict it frames. */
+.comparison:has(> .verdict[data-result="alarm"]) { border-color: var(--alarm); background: color-mix(in oklab, var(--alarm) 8%, var(--surface)); }
+.comparison:has(> .verdict[data-result="alarm"]) .verdict { border-bottom-color: var(--alarm); }
 .verdict-alarm .verdict-icon { border-color: var(--alarm); }
 .verdict-alarm strong { color: var(--alarm); }
