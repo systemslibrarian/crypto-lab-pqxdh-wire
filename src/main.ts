@@ -13,6 +13,7 @@ import {
 } from './model/quantum.js'
 import { runRatchetModel } from './model/ratchet-step.js'
 import { sessionKeysMatch } from './verify/match.js'
+import { measureWire } from './verify/wire.js'
 import { TRANSCRIPT_DIFF } from './diff/x3dh-vs-pqxdh.js'
 
 const app = document.querySelector<HTMLElement>('#app')
@@ -70,7 +71,7 @@ app.innerHTML = `
         <li data-progress="5"><span>05</span> Compare</li>
       </ol>
 
-      <div class="protocol-status" id="protocol-status" data-verdict="handshake-status" role="status" aria-live="polite">
+      <div class="protocol-status" id="protocol-status" data-verdict="handshake-status" data-result="pending" role="status" aria-live="polite">
         READY — no key material generated yet
       </div>
 
@@ -110,16 +111,18 @@ app.innerHTML = `
         <div>
           <span class="mini-label">INITIAL MESSAGE</span>
           <strong id="message-title">Alice sends public keys, prekey IDs, ML-KEM ciphertext, and AES-GCM ciphertext</strong>
+          <p class="wire-verdict" id="wire-secrecy-output" data-verdict="wire-secrecy" data-result="pending" role="status" aria-live="polite">Initial message not built yet</p>
         </div>
         <dl class="message-metrics">
-          <div><dt>KEM CT</dt><dd>1,568 B</dd></div>
-          <div><dt>AD</dt><dd>1,632 B</dd></div>
-          <div><dt>Secret sent</dt><dd>0 B</dd></div>
+          <div><dt>KEM CT</dt><dd data-claim="wire-kem-ct-bytes" data-value="">pending</dd></div>
+          <div><dt>AD</dt><dd data-claim="wire-ad-bytes" data-value="">pending</dd></div>
+          <div><dt>Secret bytes searched</dt><dd data-claim="wire-scanned-secret-bytes" data-value="">pending</dd></div>
+          <div><dt>Secret bytes found</dt><dd data-claim="wire-secret-bytes" data-value="">pending</dd></div>
         </dl>
       </section>
 
       <section class="comparison" id="comparison-panel" aria-labelledby="comparison-title" hidden>
-        <div class="verdict" id="comparison-verdict" data-verdict="session-key-match">
+        <div class="verdict" id="comparison-verdict" data-verdict="session-key-match" data-result="pending">
           <span class="verdict-icon" aria-hidden="true"></span>
           <div><span class="mini-label">BYTE-FOR-BYTE VERDICT</span><strong id="comparison-title">Session keys not compared yet</strong></div>
         </div>
@@ -151,7 +154,7 @@ app.innerHTML = `
           <span><strong>Lattice break</strong><small>Also hand the model the ML-KEM shared secret</small></span>
         </label>
       </fieldset>
-      <div class="recompute-panel" id="recompute-panel" data-verdict="adversary-model" role="status" aria-live="polite">
+      <div class="recompute-panel" id="recompute-panel" data-verdict="adversary-model" data-result="pending" role="status" aria-live="polite">
         Complete the handshake to enable the adversary model.
       </div>
       <p class="what-this-isnt"><strong>What this isn't:</strong> the browser does not run Shor's algorithm or break ML-KEM. Private values are deliberately handed to a recomputation module so its inputs can be inspected and tested.</p>
@@ -326,13 +329,19 @@ async function advanceHandshake(): Promise<void> {
       bob = await runBob(bobState, bundle, alice.message)
       protocolStatus.textContent = 'BOB COMPLETE — decapsulation, four DH operations, and AEAD verification passed'
     } else if (step === 4 && alice && bob) {
-      protocolStatus.textContent = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
+      // The status line's styling follows the same comparison its sentence
+      // reports. A mutation that flips the words has to flip the state too, or
+      // the marker goes on claiming pass in every way a reader can see.
+      const matched = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
+      protocolStatus.dataset.result = matched ? 'pass' : 'alarm'
+      protocolStatus.textContent = matched
         ? 'MATCH — both modules independently derived the same 32 bytes'
         : 'ABORT — Alice and Bob derived different keys'
     }
     step += 1
     renderHandshake()
   } catch (error) {
+    protocolStatus.dataset.result = 'alarm'
     protocolStatus.textContent = `ABORT — ${error instanceof Error ? error.message : 'unknown error'}`
   } finally {
     stepButton.disabled = false
@@ -349,6 +358,7 @@ function resetHandshake(): void {
   latticeToggle.checked = false
   latticeToggle.disabled = true
   threatControls.disabled = true
+  protocolStatus.dataset.result = 'pending'
   protocolStatus.textContent = 'READY — no key material generated yet'
   renderHandshake()
   renderThreatModel()
@@ -373,6 +383,7 @@ function renderHandshake(): void {
   requiredElement<HTMLElement>('#message-panel').hidden = step < 3
   requiredElement<HTMLElement>('#comparison-panel').hidden = step < 5
   threatControls.disabled = step < 5
+  renderWire()
 
   if (alice && step >= 2) {
     setValue('value-dh1', alice.components.dh1)
@@ -403,17 +414,70 @@ function renderHandshake(): void {
   renderComparison()
 }
 
+const BYTES = new Intl.NumberFormat('en-US')
+
+function setClaim(id: string, value: number | undefined, render: (value: number) => string): void {
+  const element = requiredElement<HTMLElement>(`[data-claim="${id}"]`)
+  element.dataset.value = value === undefined ? '' : String(value)
+  element.textContent = value === undefined ? 'pending' : render(value)
+}
+
+/**
+ * The message strip's numbers. They were `1,568 B`, `1,632 B` and `0 B`
+ * hard-coded in the template — three claims about a run, none of them produced
+ * by one. "Secret sent 0 B" is the load-bearing one: it asserts the whole point
+ * of the exhibit, and it asserted it about nothing. Each is now read off the
+ * bytes Alice actually built, and the search is reported with the amount it
+ * looked for, so "found none" cannot be satisfied by looking for nothing.
+ */
+function renderWire(): void {
+  const output = requiredElement<HTMLElement>('#wire-secrecy-output')
+  if (!alice || step < 3) {
+    for (const id of [
+      'wire-kem-ct-bytes',
+      'wire-ad-bytes',
+      'wire-scanned-secret-bytes',
+      'wire-secret-bytes',
+    ]) {
+      setClaim(id, undefined, String)
+    }
+    output.dataset.result = 'pending'
+    output.textContent = 'Initial message not built yet'
+    return
+  }
+
+  const secrets = [
+    alice.components.dh1,
+    alice.components.dh2,
+    alice.components.dh3,
+    ...(alice.components.dh4 ? [alice.components.dh4] : []),
+    alice.components.sharedSecret,
+    alice.sessionKey,
+  ]
+  const measurement = measureWire(alice.message, alice.associatedData, secrets)
+  const render = (value: number): string => `${BYTES.format(value)} B`
+  setClaim('wire-kem-ct-bytes', measurement.kemCiphertextBytes, render)
+  setClaim('wire-ad-bytes', measurement.associatedDataBytes, render)
+  setClaim('wire-scanned-secret-bytes', measurement.scannedSecretBytes, render)
+  setClaim('wire-secret-bytes', measurement.secretBytesOnWire, render)
+
+  const clean = measurement.secretBytesOnWire === 0
+  output.dataset.result = clean ? 'pass' : 'alarm'
+  output.textContent = clean
+    ? `NO SECRET ON THE WIRE — searched the sent bytes for all ${BYTES.format(measurement.scannedSecretBytes)} bytes of this session's KDF inputs and session key, and found none`
+    : `SECRET BYTES FOUND ON THE WIRE — ${BYTES.format(measurement.secretBytesOnWire)} of ${BYTES.format(measurement.scannedSecretBytes)} searched secret bytes appear in the sent bytes`
+}
+
 /**
  * The byte-for-byte verdict. This markup used to ship `ALICE SK = BOB SK`
  * hard-coded in `verdict-pass` styling with nothing ever rewriting it, so the
  * page stated the outcome of a comparison it never made.
  */
 function renderComparison(): void {
-  const panel = requiredElement<HTMLElement>('#comparison-panel')
   const verdict = requiredElement<HTMLElement>('#comparison-verdict')
   const title = requiredElement<HTMLElement>('#comparison-title')
   if (step < 5 || !alice || !bob) {
-    panel.dataset.outcome = 'pending'
+    verdict.dataset.result = 'pending'
     verdict.classList.remove('verdict-pass', 'verdict-alarm')
     title.textContent = 'Session keys not compared yet'
     return
@@ -421,7 +485,13 @@ function renderComparison(): void {
   const matched = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
   requiredElement('[data-test="alice-sk"]').textContent = bytesToHex(alice.sessionKey)
   requiredElement('[data-test="bob-sk"]').textContent = bytesToHex(bob.sessionKey)
-  panel.dataset.outcome = matched ? 'pass' : 'alarm'
+  // The card's losing face is keyed off the MARKER's own data-result, not off a
+  // second `data-outcome` hook on the panel that sits outside every marker. That
+  // hook was invisible to the outside-marker scan — it was neither in
+  // VERDICT_STYLE_SELECTOR nor inside a data-verdict element — so it could have
+  // gone on painting pass with the marker saying alarm and nothing would have
+  // reported it. One attribute, asserted through expectVerdict, is the claim.
+  verdict.dataset.result = matched ? 'pass' : 'alarm'
   verdict.classList.toggle('verdict-pass', matched)
   verdict.classList.toggle('verdict-alarm', !matched)
   title.textContent = matched
@@ -450,6 +520,7 @@ function renderThreatModel(): void {
   const output = requiredElement<HTMLElement>('#recompute-panel')
   const session = currentSession()
   if (!session || step < 5) {
+    output.dataset.result = 'pending'
     output.textContent = 'Complete the handshake to enable the adversary model.'
     return
   }
@@ -462,6 +533,7 @@ function renderThreatModel(): void {
       session.keysMatch ? 'pass' : 'alarm',
       session.keysMatch ? 'MATCHED' : 'DIVERGED',
     )
+    output.dataset.result = 'pass'
     output.innerHTML = '<strong>NO MODEL ACTIVE</strong><span>Adversary inputs: public transcript only</span>'
     return
   }
@@ -472,10 +544,12 @@ function renderThreatModel(): void {
   if (latticeToggle.checked && result.sessionKey) {
     setMaterialState('SS', 'alarm', 'OPENED IN MODEL')
     setMaterialState('SK', 'alarm', 'RECOMPUTED')
+    output.dataset.result = 'alarm'
     output.innerHTML = `<strong>SK OPENED — BOTH ASSUMPTIONS BROKEN</strong><span data-test="adversary-sk">${bytesToHex(result.sessionKey)}</span>`
   } else {
     setMaterialState('SS', 'sealed', 'OPAQUE TO MODEL')
     setMaterialState('SK', 'locked', 'STILL LOCKED (UNDER THIS MODEL)')
+    output.dataset.result = 'locked'
     output.innerHTML = '<strong>SS = UNKNOWN · SK = NOT DERIVED</strong><span>Four X25519 outputs are insufficient input to HKDF.</span>'
   }
 }
@@ -563,7 +637,11 @@ requiredElement<HTMLButtonElement>('#impersonate-button').addEventListener('clic
   const verdicts = checks
     .map(([name, passed]) => `${name}: ${passed ? 'PASS' : 'FAIL'}`)
     .join(' · ')
-  output.dataset.result = 'alarm'
+  // Set FROM the measurement, not before it. This was an unconditional 'alarm',
+  // so the `impersonation-signer-check` mutation flipped the headline to FIXTURE
+  // INVALID while the marker went on painting the same state — exactly the
+  // text-only kill this lane stopped counting as evidence.
+  output.dataset.result = fixture.checksGreen ? 'alarm' : 'invalid'
   output.innerHTML = fixture.checksGreen
     ? `<strong>PQ-CONFIDENTIAL — AND IMPERSONATED</strong><span data-test="impersonate-checks">${verdicts}</span><span>Each verdict above was measured after the handshake, not assumed. The attacker derived ${shortHex(fixture.sessionKey)} with Alice.</span>`
     : `<strong>FIXTURE INVALID — a check did not report success</strong><span data-test="impersonate-checks">${verdicts}</span>`
@@ -582,14 +660,28 @@ requiredElement<HTMLButtonElement>('#ratchet-button').addEventListener('click', 
     .map((root) => bytesToHex(root.slice(0, 4)))
     .join(' → ')
   const roots = `<span data-test="ratchet-roots">Root chain: ${chain}</span>`
+  // COUNTED off the two chains the model actually built, not typed beside them.
+  // These were the English words "Three" and "all three" while `runRatchetModel`
+  // built its chain from `for (let step = 0; step < 3; ...)`, so the sentence and
+  // the chain agreed only by coincidence: an auditor set them to "Seven" and "all
+  // seven" over a four-root chain and every check stayed green at 25 passed. Each
+  // count is a marked measurement with its machine value beside it, so the spec's
+  // oracle can compare what is rendered to the chain it measures, and neither can
+  // drift without the other.
+  const honestUpdates = result.honestRoots.length - 1
+  const modelUpdates = result.adversaryRoots.length - 1
+  const counted = (id: string, value: number): string =>
+    `<span data-claim="${id}" data-value="${value}">${value}</span>`
+  const honest = counted('ratchet-honest-updates', honestUpdates)
+  const model = counted('ratchet-model-updates', modelUpdates)
   output.dataset.result = result.healed && !result.stillReadable ? 'pass' : 'alarm'
   if (!result.healed) {
     output.innerHTML = `<strong>DID NOT HEAL — root chain did not advance</strong>${roots}`
     return
   }
   output.innerHTML = result.stillReadable
-    ? `<strong>HEALED — AND STILL READ</strong>${roots}<span>Three honest root updates completed; the curve-break model recomputed all three.</span>`
-    : `<strong>HEALED</strong>${roots}<span>Three honest root updates completed; the classical observer remained at the compromised root.</span>`
+    ? `<strong>HEALED — AND STILL READ</strong>${roots}<span>${honest} honest root updates completed; the curve-break model recomputed ${model} of them.</span>`
+    : `<strong>HEALED</strong>${roots}<span>${honest} honest root updates completed; the classical observer recomputed ${model} of them and remained at the compromised root.</span>`
 })
 
 renderHandshake()

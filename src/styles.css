@@ -130,9 +130,16 @@ body {
 .step-track li[data-complete="true"] span { color: var(--cyan); }
 
 .protocol-status { min-height: 2.8rem; display: flex; align-items: center; margin-bottom: 1rem; border-left: 3px solid var(--accent); padding: .7rem 1rem; background: var(--surface); color: var(--text-dim); font: 500 .78rem/1.45 'DM Mono', monospace; }
+.protocol-status[data-result="pass"] { border-left-color: var(--success); }
+.protocol-status[data-result="alarm"] { border-left-color: var(--alarm); }
 .bundle-strip, .message-strip { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1rem 0; border: 1px solid var(--border); padding: 1rem; background: var(--surface); animation: reveal .28s ease-out both; }
 .bundle-strip strong, .message-strip strong { display: block; margin-top: .25rem; font-size: .9rem; }
 .bundle-values, .message-metrics { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 0; }
+/* The wire measurement reads as the verdict it is: its colour follows the
+   measured secret-byte count, so a mutation cannot flip the sentence alone. */
+.wire-verdict { margin: .5rem 0 0; color: var(--text-dim); font: 500 .7rem/1.5 'DM Mono', monospace; }
+.wire-verdict[data-result="pass"] { color: var(--success); }
+.wire-verdict[data-result="alarm"] { color: var(--alarm); }
 .bundle-values div, .message-metrics div { min-width: 5rem; }
 .bundle-values dt, .message-metrics dt, .key-compare dt { color: var(--text-muted); font-size: .68rem; }
 .bundle-values dd, .message-metrics dd { margin: .2rem 0 0; color: var(--gold); font-size: .75rem; }
@@ -187,6 +194,12 @@ body {
 
 .recompute-panel { display: grid; grid-template-columns: minmax(14rem, .8fr) minmax(16rem, 1.2fr); gap: 1rem; min-height: 5rem; margin-top: 1rem; border-left: 3px solid var(--alarm); padding: 1rem; background: var(--surface-raised); }
 .recompute-panel strong { color: var(--alarm); font: 500 .78rem/1.4 'DM Mono', monospace; }
+.recompute-panel[data-result="pending"] { border-left-color: var(--border-strong); }
+.recompute-panel[data-result="pending"] strong { color: var(--text-dim); }
+.recompute-panel[data-result="pass"] { border-left-color: var(--success); }
+.recompute-panel[data-result="pass"] strong { color: var(--success); }
+.recompute-panel[data-result="locked"] { border-left-color: var(--locked); }
+.recompute-panel[data-result="locked"] strong { color: var(--locked); }
 .recompute-panel span { min-width: 0; color: var(--text-dim); font: .7rem/1.5 'DM Mono', monospace; overflow-wrap: anywhere; }
 .what-this-isnt { margin: 1rem 0 0; color: var(--text-muted); font-size: .84rem; }
 .what-this-isnt strong { color: var(--text-dim); }
@@ -195,10 +208,14 @@ body {
 .break-item, .limit-item { min-width: 0; padding: clamp(1rem, 2vw, 1.4rem); background: var(--surface); }
 .break-item p, .limit-item p { margin: 0 0 1rem; color: var(--text-dim); font-size: .88rem; }
 .fixture-output { display: block; min-height: 4.25rem; margin-top: 1rem; border-left: 2px solid var(--border-strong); padding: .75rem; background: var(--surface-raised); color: var(--text-muted); font-size: .67rem; line-height: 1.5; overflow-wrap: anywhere; }
-.fixture-output strong, .fixture-output span { display: block; }
-.fixture-output span { margin-top: .35rem; }
+/* Direct children only. The ratchet sentence now carries its measured counts in
+   nested `data-claim` spans, and a descendant selector here would break each
+   number onto its own line mid-sentence. */
+.fixture-output > strong, .fixture-output > span { display: block; }
+.fixture-output > span { margin-top: .35rem; }
 .fixture-output[data-result="alarm"] { border-left-color: var(--alarm); color: #ffc1a8; }
 .fixture-output[data-result="pass"] { border-left-color: var(--success); color: var(--success); }
+.fixture-output[data-result="invalid"] { border-left-color: var(--locked); }
 .limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border: 1px solid var(--border); background: var(--border); }
 .limit-item .model-badge { margin-bottom: .3rem; }
 
@@ -269,8 +286,11 @@ td { color: var(--text-dim); font: .72rem/1.45 'DM Mono', monospace; }
 }
 /* The byte-for-byte verdict is rendered from the comparison, so it needs a
    losing face as well as a winning one. Reached only when Alice and Bob derive
-   different session keys. */
-.comparison[data-outcome="alarm"] { border-color: var(--alarm); background: color-mix(in oklab, var(--alarm) 8%, var(--surface)); }
-.comparison[data-outcome="alarm"] .verdict { border-bottom-color: var(--alarm); }
+   different session keys. Keyed off the MARKER's own data-result: the panel used
+   to carry a second `data-outcome` state hook of its own, outside every
+   data-verdict marker and outside VERDICT_STYLE_SELECTOR, so nothing checked it
+   and nothing would have noticed it disagreeing with the verdict it frames. */
+.comparison:has(> .verdict[data-result="alarm"]) { border-color: var(--alarm); background: color-mix(in oklab, var(--alarm) 8%, var(--surface)); }
+.comparison:has(> .verdict[data-result="alarm"]) .verdict { border-bottom-color: var(--alarm); }
 .verdict-alarm .verdict-icon { border-color: var(--alarm); }
 .verdict-alarm strong { color: var(--alarm); }

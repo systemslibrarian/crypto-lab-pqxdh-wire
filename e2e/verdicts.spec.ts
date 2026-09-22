@@ -1,12 +1,21 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+
+import { expectClaim, expectVerdict } from './expect-verdict.js'
 
 /**
- * One test per `data-verdict` marker, asserting what that marker renders.
+ * One test per `data-verdict` marker and per `data-claim` measurement,
+ * asserting what that marker renders AND the state it paints, together, through
+ * `expectVerdict` / `expectClaim`.
  *
  * These are the assertions the recorded mutations in e2e/verdict-mutations.json
  * must break. Keeping them one-to-one with the markers is what makes a kill
  * legible: when a mutation is applied, the failure is this verdict's own
  * assertion rather than a build error, a blank page, or the suite going red.
+ *
+ * Text alone is not enough and is no longer accepted by the helper. A mutation
+ * that flips the words while leaving `data-result="pass"` in place would have
+ * been recorded as a kill, and the marker would go on claiming pass in every
+ * way a reader can see except the sentence.
  */
 
 const marker = (page: Page, id: string) => page.locator(`[data-verdict="${id}"]`)
@@ -37,22 +46,37 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('handshake-status reports the measured 32-byte comparison', async ({ page }) => {
+  await expectVerdict(page, 'handshake-status', {
+    contains: 'READY — no key material generated yet',
+    result: 'pending',
+  })
   await completeHandshake(page)
-  await expect(marker(page, 'handshake-status')).toHaveText(
-    'MATCH — both modules independently derived the same 32 bytes',
-  )
+  await expectVerdict(page, 'handshake-status', {
+    text: 'MATCH — both modules independently derived the same 32 bytes',
+    result: 'pass',
+  })
 })
 
 test('session-key-match renders the byte-for-byte verdict, not a canned banner', async ({
   page,
 }) => {
-  await expect(marker(page, 'session-key-match')).toContainText(
-    'Session keys not compared yet',
-  )
+  await expectVerdict(page, 'session-key-match', {
+    contains: 'Session keys not compared yet',
+    result: 'pending',
+  })
   await completeHandshake(page)
-  await expect(page.locator('#comparison-title')).toHaveText('ALICE SK = BOB SK')
-  await expect(marker(page, 'session-key-match')).toHaveClass(/verdict-pass/)
-  await expect(page.locator('#comparison-panel')).toHaveAttribute('data-outcome', 'pass')
+  await expectVerdict(page, 'session-key-match', {
+    label: '#comparison-title',
+    text: 'ALICE SK = BOB SK',
+    result: 'pass',
+    klass: /verdict-pass/,
+  })
+  // The panel's own `data-outcome` hook used to be asserted here with a loose
+  // `toHaveAttribute`, outside the helper and outside the marker. It is gone:
+  // the card's face is keyed off this marker's `data-result`, which the claim
+  // above asserts, so there is one attribute and one claim rather than two
+  // states that could disagree. `[data-outcome]` stays in VERDICT_STYLE_SELECTOR
+  // so a replacement cannot arrive unmarked.
 
   const alice = await page.locator('[data-test="alice-sk"]').textContent()
   const bob = await page.locator('[data-test="bob-sk"]').textContent()
@@ -63,94 +87,141 @@ test('session-key-match renders the byte-for-byte verdict, not a canned banner',
 test('session-key-state labels SK from the comparison, not the step counter', async ({
   page,
 }) => {
-  const label = marker(page, 'session-key-state').locator('[data-state-label]')
-  await expect(label).toHaveText('WAITING')
+  await expectVerdict(page, 'session-key-state', {
+    label: '[data-state-label]',
+    text: 'WAITING',
+    state: 'sealed',
+  })
   await completeHandshake(page)
-  await expect(label).toHaveText('MATCHED')
-  await expect(marker(page, 'session-key-state')).toHaveAttribute('data-state', 'pass')
+  await expectVerdict(page, 'session-key-state', {
+    label: '[data-state-label]',
+    text: 'MATCHED',
+    state: 'pass',
+  })
 })
 
 test('kdf-input-state opens exactly the boxes the grant covers', async ({ page }) => {
-  const ss = marker(page, 'kdf-input-state').locator(
-    '[data-material="SS"] [data-state-label]',
-  )
-  const dh1 = marker(page, 'kdf-input-state').locator(
-    '[data-material="DH1"] [data-state-label]',
-  )
-  await expect(ss).toHaveText('SEALED')
+  await expectVerdict(page, 'kdf-input-state', {
+    within: '[data-material="SS"]',
+    label: '[data-state-label]',
+    text: 'SEALED',
+    state: 'sealed',
+  })
   await completeHandshake(page)
-  await expect(ss).toHaveText('HONEST INPUT')
+  await expectVerdict(page, 'kdf-input-state', {
+    within: '[data-material="SS"]',
+    label: '[data-state-label]',
+    text: 'HONEST INPUT',
+    state: 'derived',
+  })
 
   await page.locator('#quantum-toggle').check()
-  await expect(dh1).toHaveText('OPENED IN MODEL')
-  await expect(ss).toHaveText('OPAQUE TO MODEL')
+  await expectVerdict(
+    page,
+    'kdf-input-state',
+    {
+      within: '[data-material="DH1"]',
+      label: '[data-state-label]',
+      text: 'OPENED IN MODEL',
+      state: 'alarm',
+    },
+    {
+      within: '[data-material="SS"]',
+      label: '[data-state-label]',
+      text: 'OPAQUE TO MODEL',
+      state: 'sealed',
+    },
+  )
 
   await page.locator('#lattice-toggle').check()
-  await expect(ss).toHaveText('OPENED IN MODEL')
+  await expectVerdict(page, 'kdf-input-state', {
+    within: '[data-material="SS"]',
+    label: '[data-state-label]',
+    text: 'OPENED IN MODEL',
+    state: 'alarm',
+  })
 })
 
 test('adversary-model derives SK only when both assumptions are granted', async ({
   page,
 }) => {
   await completeHandshake(page)
-  const panel = marker(page, 'adversary-model')
   await page.locator('#quantum-toggle').check()
-  await expect(panel).toContainText('SS = UNKNOWN · SK = NOT DERIVED')
+  await expectVerdict(page, 'adversary-model', {
+    contains: 'SS = UNKNOWN · SK = NOT DERIVED',
+    result: 'locked',
+  })
   await expect(page.locator('[data-test="adversary-sk"]')).toHaveCount(0)
 
   await page.locator('#lattice-toggle').check()
-  await expect(panel).toContainText('SK OPENED — BOTH ASSUMPTIONS BROKEN')
+  await expectVerdict(page, 'adversary-model', {
+    contains: 'SK OPENED — BOTH ASSUMPTIONS BROKEN',
+    result: 'alarm',
+  })
   const honest = await page.locator('[data-test="alice-sk"]').textContent()
   await expect(page.locator('[data-test="adversary-sk"]')).toHaveText(honest ?? '')
 })
 
 test('prekey-signature-abort names the check that fired', async ({ page }) => {
   await page.locator('#bad-signature-button').click()
-  const output = marker(page, 'prekey-signature-abort')
-  await expect(output).toContainText(
-    'ABORT — Signed ML-KEM prekey signature verification failed',
-  )
-  await expect(output).not.toContainText('UNEXPECTED ACCEPT')
-  await expect(output).toHaveAttribute('data-result', 'alarm')
+  await expectVerdict(page, 'prekey-signature-abort', {
+    contains: 'ABORT — Signed ML-KEM prekey signature verification failed',
+    absent: 'UNEXPECTED ACCEPT',
+    result: 'alarm',
+  })
 })
 
 test('kem-tamper-abort names the AEAD as the place the mismatch surfaced', async ({
   page,
 }) => {
   await page.locator('#tamper-button').click()
-  const output = marker(page, 'kem-tamper-abort')
-  await expect(output).toContainText(
-    'REJECTED AT FIRST AEAD — Initial AEAD authentication failed after ML-KEM implicit rejection',
-  )
-  await expect(output).not.toContainText('UNEXPECTED ACCEPT')
-  await expect(output).toHaveAttribute('data-result', 'alarm')
+  await expectVerdict(page, 'kem-tamper-abort', {
+    contains:
+      'REJECTED AT FIRST AEAD — Initial AEAD authentication failed after ML-KEM implicit rejection',
+    absent: 'UNEXPECTED ACCEPT',
+    result: 'alarm',
+  })
 })
 
 test('last-resort-reuse measures the three facts it claims', async ({ page }) => {
   await page.locator('#reuse-toggle').check()
-  const output = marker(page, 'last-resort-reuse')
-  await expect(output).toContainText('SAME PQ KEY ID')
-  await expect(output).not.toContainText('NO LAST-RESORT REUSE OBSERVED')
+  await expectVerdict(page, 'last-resort-reuse', {
+    contains: ['SAME PQ KEY ID', 'Reuse does not reveal either SK by itself'],
+    absent: 'NO LAST-RESORT REUSE OBSERVED',
+    result: 'alarm',
+  })
 
+  const output = marker(page, 'last-resort-reuse')
   const rendered = (await output.locator('[data-test="reuse-checks"]').textContent()) ?? ''
   const checks = rendered.split(' · ').map((entry) => entry.trim()).filter(Boolean)
   expect(checks).toHaveLength(3)
   expect(checks.every((entry) => entry.endsWith(': PASS'))).toBe(true)
-  await expect(output).toContainText('Reuse does not reveal either SK by itself')
 })
 
 test('impersonation reports four measured checks, not a flag', async ({ page }) => {
   await page.locator('#impersonate-button').click()
-  const output = marker(page, 'impersonation')
-  await expect(output).toContainText('PQ-CONFIDENTIAL — AND IMPERSONATED')
-  await expect(output).not.toContainText('FIXTURE INVALID')
+  await expectVerdict(page, 'impersonation', {
+    contains: 'PQ-CONFIDENTIAL — AND IMPERSONATED',
+    absent: 'FIXTURE INVALID',
+    result: 'alarm',
+  })
 
+  const output = marker(page, 'impersonation')
   const rendered =
     (await output.locator('[data-test="impersonate-checks"]').textContent()) ?? ''
   const checks = rendered.split(' · ').map((entry) => entry.trim()).filter(Boolean)
   expect(checks).toHaveLength(4)
   expect(checks.every((entry) => entry.endsWith(': PASS'))).toBe(true)
 })
+
+/** The root chain as the page rendered it — the only chain this oracle has. */
+async function readRootChain(output: Locator): Promise<string[]> {
+  return ((await output.locator('[data-test="ratchet-roots"]').textContent()) ?? '')
+    .replace('Root chain:', '')
+    .split('→')
+    .map((root) => root.trim())
+    .filter(Boolean)
+}
 
 test('ratchet-heal reaches both outcomes from a chain that is always built', async ({
   page,
@@ -159,22 +230,115 @@ test('ratchet-heal reaches both outcomes from a chain that is always built', asy
   const output = marker(page, 'ratchet-heal')
 
   await page.locator('#ratchet-button').click()
-  await expect(output).toContainText('HEALED')
-  await expect(output).not.toContainText('STILL READ')
-  await expect(output).not.toContainText('DID NOT HEAL')
-  await expect(output).toHaveAttribute('data-result', 'pass')
+  await expectVerdict(page, 'ratchet-heal', {
+    contains: 'HEALED',
+    absent: ['STILL READ', 'DID NOT HEAL'],
+    result: 'pass',
+  })
 
   const compromised = (await page.locator('[data-test="alice-sk"]').textContent()) ?? ''
-  const chain = ((await output.locator('[data-test="ratchet-roots"]').textContent()) ?? '')
-    .replace('Root chain:', '')
-    .split('→')
-    .map((root) => root.trim())
+  const chain = await readRootChain(output)
   expect(chain).toHaveLength(4)
   expect(new Set(chain).size).toBe(4)
   expect(chain[0]).toBe(compromised.slice(0, 8))
 
+  // The COUNT beside the chain, compared to the chain this test just measured.
+  // It was the English word "Three" in a sentence no oracle read, while
+  // `runRatchetModel` built the chain from `step < 3`; the two agreed by
+  // coincidence, and an auditor rendered "Seven honest root updates completed"
+  // over a four-root chain with this suite green at 25 passed. A chain of N
+  // roots is N-1 updates, whatever N is.
+  await expectClaim(page, 'ratchet-honest-updates', {
+    text: String(chain.length - 1),
+    value: String(chain.length - 1),
+  })
+  // No model granted: the classical observer advanced no root at all, so the
+  // "remained at the compromised root" clause beside it has a number behind it.
+  await expectClaim(page, 'ratchet-model-updates', { text: '0', value: '0' })
+
   await page.locator('#quantum-toggle').check()
   await page.locator('#ratchet-button').click()
-  await expect(output).toContainText('HEALED — AND STILL READ')
-  await expect(output).toHaveAttribute('data-result', 'alarm')
+  await expectVerdict(page, 'ratchet-heal', {
+    contains: 'HEALED — AND STILL READ',
+    result: 'alarm',
+  })
+  const broken = await readRootChain(output)
+  expect(broken).toHaveLength(4)
+  await expectClaim(page, 'ratchet-honest-updates', {
+    text: String(broken.length - 1),
+    value: String(broken.length - 1),
+  })
+  // STILL READ means the model matched the chain the whole way, so what it
+  // recomputed is the honest update count — measured, not the word "all".
+  await expectClaim(page, 'ratchet-model-updates', {
+    text: String(broken.length - 1),
+    value: String(broken.length - 1),
+  })
+})
+
+/**
+ * The wire measurements. These numbers used to be `1,568 B`, `1,632 B` and
+ * `0 B` written into the page template, so the strongest claim the exhibit
+ * makes — that no secret crossed the wire — was a literal about nothing.
+ *
+ * The oracle for the searched-bytes total sums the page's own rendered KDF
+ * inputs at their own widths rather than reading the figure off the strip under
+ * test. It cannot DEMONSTRATE the difference between that sum and one width
+ * multiplied out: every secret this exhibit searches is 32 B, so the two produce
+ * the identical 192 B and no assertion here can separate them. The sum is the
+ * shape that stays right if a run ever omits DH4 because the one-time prekey is
+ * exhausted — a property of the oracle, not a result it exhibits.
+ */
+const X25519_PUBLIC_KEY_BYTES = 32 // RFC 7748 §5
+const ML_KEM_1024_BYTES = 1568 // FIPS 203: ML-KEM-1024 ek and c are both 1568 B
+
+test('wire-secrecy searches the sent bytes rather than asserting they are clean', async ({
+  page,
+}) => {
+  await expectVerdict(page, 'wire-secrecy', {
+    contains: 'Initial message not built yet',
+    result: 'pending',
+  })
+  await completeHandshake(page)
+
+  // Every secret the page rendered for this session, summed at its own width.
+  const secretHex = await Promise.all(
+    ['value-dh1', 'value-dh2', 'value-dh3', 'value-dh4', 'value-ss', 'value-sk'].map((id) =>
+      page.locator(`[data-test="${id}"]`).textContent(),
+    ),
+  )
+  const searched = secretHex
+    .map((hex) => (hex ?? '').trim())
+    .filter((hex) => /^[0-9a-f]+$/.test(hex))
+    .reduce((total, hex) => total + hex.length / 2, 0)
+  expect(searched, 'the page must have rendered the secrets the scan claims to search').toBe(
+    6 * X25519_PUBLIC_KEY_BYTES,
+  )
+
+  await expectVerdict(page, 'wire-secrecy', {
+    contains: `searched the sent bytes for all ${searched.toLocaleString('en-US')} bytes`,
+    absent: 'SECRET BYTES FOUND ON THE WIRE',
+    result: 'pass',
+  })
+  await expectClaim(page, 'wire-scanned-secret-bytes', {
+    text: `${searched.toLocaleString('en-US')} B`,
+    value: String(searched),
+  })
+  await expectClaim(page, 'wire-secret-bytes', { text: '0 B', value: '0' })
+})
+
+test('wire-kem-ct-bytes and wire-ad-bytes measure the message rather than restate it', async ({
+  page,
+}) => {
+  await completeHandshake(page)
+  await expectClaim(page, 'wire-kem-ct-bytes', {
+    text: '1,568 B',
+    value: String(ML_KEM_1024_BYTES),
+  })
+  // AD binds IK_A || IK_B || PQPK_B — PQXDH Revision 3 — and the AEAD Bob
+  // verified is the evidence these are the bytes actually authenticated.
+  await expectClaim(page, 'wire-ad-bytes', {
+    text: '1,632 B',
+    value: String(2 * X25519_PUBLIC_KEY_BYTES + ML_KEM_1024_BYTES),
+  })
 })
