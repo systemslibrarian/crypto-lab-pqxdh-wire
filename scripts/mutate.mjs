@@ -1,21 +1,59 @@
 #!/usr/bin/env node
-// Applies or reverts one recorded §4.1c mutation from e2e/verdict-mutations.json.
+// Applies, reverts, or JUDGES the recorded §4.1c mutations in
+// e2e/verdict-mutations.json.
 //
 //   node scripts/mutate.mjs list
 //   node scripts/mutate.mjs apply <id>
 //   node scripts/mutate.mjs revert <id>
+//   node scripts/mutate.mjs run [id...]      <- the judging loop
 //
-// A kill counts only when the unmutated baseline passed in the same run, the
-// failure is the verdict's own assertion, and the server served the mutated
-// code — so run the suite with CI=1, which turns off reuseExistingServer.
-import { readFileSync, writeFileSync } from 'node:fs'
+// WHY A JUDGING LOOP AND NOT JUST apply/revert
+//
+// apply/revert leaves the judgement to a person, and the judgement is the part
+// that goes wrong. A mutated run can go red for reasons that are not the
+// verdict: a build error, a server that never started, a port answering from an
+// unmutated checkout. Each of those looks exactly like a kill in a terminal and
+// is not one. Worse, a patch whose anchor no longer matches applies nothing at
+// all, the suite stays green, and "the mutation survived" is indistinguishable
+// from "the harness does not bite" — a mistake made twice in this fleet before
+// anything checked for it.
+//
+// THE FOUR RULES A KILL HAS TO CLEAR, all enforced below:
+//
+//   1. the owning test PASSED unmutated, in this same run;
+//   2. the patch actually CHANGED the file (anchor unique, bytes different);
+//   3. the run served the MUTATED code — proved two ways, because one is not
+//      enough: the built bundle's hash must move, and the failure must not
+//      match a shape that means the code never ran at all;
+//   4. the failure is that marker's OWN assertion, not the suite going red.
+//
+// A patch that does not compile is DOES NOT BUILD and is never a kill. Fix the
+// patch — `|| true` rather than deleting a used local — and re-run.
+//
+// The run happens in an isolated `git archive HEAD` tree with node_modules
+// symlinked, so nothing is judged against the working copy and a crash cannot
+// strand an inverted condition in a file that also holds real work. CI=1 forces
+// playwright.config.ts's `reuseExistingServer: !process.env.CI` to false, so
+// port 4700 cannot be answered by a server an earlier, unmutated run left up.
+//
+// This loop does NOT write its results back into the ledger, and that is a
+// deliberate split. e2e/global-teardown.ts already fails the run when a recorded
+// kill never executed, so an unperformed record cannot sit in this file looking
+// performed; an archived `observed` string would be a second copy of an answer
+// the suite already enforces. crypto-lab-hidden-bit made the same choice for the
+// same reason. crypto-lab-privacy-pass writes one because its records are quoted
+// in prose elsewhere — an archival choice, not a stronger check.
+
+import { execFileSync, execSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = fileURLToPath(new URL('../', import.meta.url))
-const registry = JSON.parse(
-  readFileSync(new URL('../e2e/verdict-mutations.json', import.meta.url), 'utf8'),
-)
-const [command, id] = process.argv.slice(2)
+const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
+const registry = JSON.parse(readFileSync(join(root, 'e2e', 'verdict-mutations.json'), 'utf8'))
+const [command, ...rest] = process.argv.slice(2)
 
 if (command === 'list' || !command) {
   for (const [key, entry] of Object.entries(registry.mutations)) {
@@ -28,20 +66,220 @@ if (command === 'list' || !command) {
   process.exit(0)
 }
 
-const entry = registry.mutations[id]
-if (!entry) {
-  console.error(`unknown mutation: ${id}`)
+/* ---- apply / revert: one edit, in the working tree ----------------------- */
+if (command === 'apply' || command === 'revert') {
+  const id = rest[0]
+  const entry = registry.mutations[id]
+  if (!entry) {
+    console.error(`unknown mutation: ${id}`)
+    process.exit(2)
+  }
+  const path = join(root, entry.file)
+  const source = readFileSync(path, 'utf8')
+  const [from, to] = command === 'apply' ? [entry.find, entry.replace] : [entry.replace, entry.find]
+  const occurrences = source.split(from).length - 1
+  if (occurrences !== 1) {
+    console.error(`refusing: ${entry.file} matched ${occurrences}x, want exactly 1`)
+    process.exit(2)
+  }
+  writeFileSync(path, source.replace(from, to))
+  console.log(`${command} ${id} -> ${entry.file}`)
+  process.exit(0)
+}
+
+if (command !== 'run') {
+  console.error(`unknown command: ${command}. Try list, apply, revert or run.`)
   process.exit(2)
 }
 
-const path = new URL(entry.file, `file://${root}`)
-const source = readFileSync(path, 'utf8')
-const [from, to] =
-  command === 'apply' ? [entry.find, entry.replace] : [entry.replace, entry.find]
-const occurrences = source.split(from).length - 1
-if (occurrences !== 1) {
-  console.error(`refusing: ${entry.file} matched ${occurrences}x, want exactly 1`)
+/* ---- run: the judging loop ---------------------------------------------- */
+
+const ids = rest.length ? rest : Object.keys(registry.mutations)
+const unknown = ids.filter((id) => !registry.mutations[id])
+if (unknown.length) {
+  console.error(`unknown mutation(s): ${unknown.join(', ')}`)
   process.exit(2)
 }
-writeFileSync(path, source.replace(from, to))
-console.log(`${command} ${id} -> ${entry.file}`)
+
+const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8' }).trim()
+
+// `git archive HEAD` cannot see uncommitted work, so a dirty tree would produce
+// results about a tree nobody has.
+const dirty = git('status', '--porcelain', '--untracked-files=no')
+if (dirty && !process.env.MUTATION_ALLOW_DIRTY) {
+  console.error('Refusing to run: uncommitted changes to tracked files.\n')
+  console.error(dirty)
+  console.error('\nThe isolated tree is archived from HEAD and would not contain them.')
+  console.error('Commit first. MUTATION_ALLOW_DIRTY=1 overrides, knowing that.')
+  process.exit(2)
+}
+const sha = git('rev-parse', 'HEAD').slice(0, 7)
+
+/* Rule 2, checked for every selected patch BEFORE any is applied. An
+   unreversible patch strands a mutated file and turns every later result into a
+   verdict about that file rather than about its own mutation. */
+const invalid = []
+for (const id of ids) {
+  const entry = registry.mutations[id]
+  const text = readFileSync(join(root, entry.file), 'utf8')
+  const anchors = text.split(entry.find).length - 1
+  if (anchors !== 1) {
+    invalid.push(`${id}: find occurs ${anchors} times in ${entry.file}, expected 1`)
+    continue
+  }
+  const after = text.replace(entry.find, entry.replace)
+  if (after === text) invalid.push(`${id}: the patch is a no-op, it would not change ${entry.file}`)
+  else if (after.split(entry.replace).length - 1 !== 1) {
+    invalid.push(`${id}: replace occurs more than once after applying, so it cannot be reverted`)
+  }
+}
+if (invalid.length) {
+  console.error('Refusing to run: these patches cannot make the round trip.\n')
+  for (const line of invalid) console.error(`  ${line}`)
+  process.exit(2)
+}
+
+const TREE = mkdtempSync(join(tmpdir(), 'pqxdh-mutation-'))
+console.log(`isolated tree: ${TREE}`)
+console.log(`archived from: ${sha}`)
+console.log(`${ids.length} patches make the round trip.\n`)
+execSync(`git -C ${root} archive HEAD | tar -x -C ${TREE}`, { stdio: 'pipe' })
+symlinkSync(join(root, 'node_modules'), join(TREE, 'node_modules'))
+
+const sh = (cmd) =>
+  execSync(cmd, {
+    cwd: TREE,
+    stdio: 'pipe',
+    encoding: 'utf8',
+    env: { ...process.env, CI: '1' },
+    maxBuffer: 64 * 1024 * 1024,
+  })
+
+const DIST = join(TREE, 'dist', 'assets')
+function bundleHash() {
+  if (!existsSync(DIST)) return null
+  const h = createHash('sha256')
+  for (const f of readdirSync(DIST).sort()) h.update(f).update(readFileSync(join(DIST, f)))
+  return h.digest('hex').slice(0, 12)
+}
+const md5 = (rel) => createHash('md5').update(readFileSync(join(TREE, rel))).digest('hex').slice(0, 12)
+
+function build() {
+  try {
+    sh('npm run build')
+    return true
+  } catch {
+    return false
+  }
+}
+
+const strip = (s) => s.replace(/\[[0-9;]*m/g, '')
+
+/** Rule 3's second half. Red for one of these reasons means the code never ran. */
+const NOT_A_KILL = [
+  { pattern: /error TS\d+|Build failed|Transform failed|Could not resolve/i, label: 'build error' },
+  { pattern: /webServer.*did not start|Timeout .* exceeded while running "beforeAll"/i, label: 'server never started' },
+  { pattern: /net::ERR_CONNECTION_REFUSED/i, label: 'nothing served on the port' },
+]
+const notAKill = (output) => NOT_A_KILL.find(({ pattern }) => pattern.test(strip(output)))?.label ?? null
+
+function runTest(title) {
+  const cmd = `npx playwright test e2e/verdicts.spec.ts e2e/claims.spec.ts -g ${JSON.stringify(title)} --reporter=list --retries=0`
+  try {
+    return { failed: false, output: sh(cmd) }
+  } catch (err) {
+    return { failed: true, output: `${err.stdout ?? ''}${err.stderr ?? ''}` }
+  }
+}
+
+function apply(entry, forward) {
+  const [from, to] = forward ? [entry.find, entry.replace] : [entry.replace, entry.find]
+  const path = join(TREE, entry.file)
+  const before = readFileSync(path, 'utf8')
+  if (before.split(from).length - 1 !== 1) throw new Error(`${entry.file}: anchor no longer unique`)
+  const after = before.replace(from, to)
+  if (after === before) throw new Error('the patch produced an identical file: it did not apply')
+  writeFileSync(path, after)
+}
+
+console.log('building the baseline in the isolated tree...')
+if (!build()) {
+  console.error('The baseline build fails in the isolated tree. Nothing below would mean anything.')
+  rmSync(TREE, { recursive: true, force: true })
+  process.exit(2)
+}
+const baselineHash = bundleHash()
+console.log(`baseline bundle ${baselineHash}\n`)
+
+const baselines = new Map()
+const baselineFor = (title) => {
+  if (!baselines.has(title)) baselines.set(title, runTest(title))
+  return baselines.get(title)
+}
+
+const results = []
+for (const id of ids) {
+  const entry = registry.mutations[id]
+  const markers = Object.entries(entry.kills ?? {})
+  process.stdout.write(`${id.padEnd(38)} `)
+  try {
+    const redBaselines = markers.filter(([, k]) => baselineFor(k.test).failed)
+    const beforeMd5 = md5(entry.file)
+    apply(entry, true)
+    const built = build()
+    const mutatedHash = built ? bundleHash() : null
+    const runs = built ? markers.map(([marker, k]) => [marker, runTest(k.test)]) : []
+    apply(entry, false)
+    build()
+    const restoredHash = bundleHash()
+    if (md5(entry.file) !== beforeMd5) {
+      console.log('NOT RESTORED')
+      console.error(`\n${id}: ${entry.file} did not return to md5 ${beforeMd5}. Aborting.`)
+      rmSync(TREE, { recursive: true, force: true })
+      process.exit(2)
+    }
+
+    const shapes = runs.map(([, r]) => notAKill(r.output)).filter(Boolean)
+    const survived = runs.filter(([, r]) => !r.failed).map(([m]) => m)
+    const wrongName = runs.filter(([m, r]) => r.failed && !strip(r.output).includes(m)).map(([m]) => m)
+
+    const verdict = redBaselines.length
+      ? `BASELINE ALREADY RED (${redBaselines.map(([m]) => m).join(', ')})`
+      : !built
+        ? 'DOES NOT BUILD'
+        : mutatedHash === baselineHash
+          ? 'BUNDLE UNCHANGED'
+          : shapes.length
+            ? `NOT A KILL (${shapes[0]})`
+            : survived.length
+              ? `SURVIVED (${survived.join(', ')})`
+              : wrongName.length
+                ? `FAILED FOR THE WRONG REASON (${wrongName.join(', ')})`
+                : restoredHash !== baselineHash
+                  ? 'NOT RESTORED'
+                  : 'KILLED'
+    results.push({ id, verdict, markers: markers.map(([m]) => m) })
+    console.log(
+      verdict === 'KILLED'
+        ? `KILLED  ${baselineHash} -> ${mutatedHash} -> ${restoredHash}  markers: ${markers.map(([m]) => m).join(', ')}`
+        : verdict,
+    )
+  } catch (err) {
+    console.log(`ERROR  ${err.message}`)
+    console.error('\nAborting: a mutated file left in place makes every later verdict a statement about it.')
+    rmSync(TREE, { recursive: true, force: true })
+    process.exit(2)
+  }
+}
+
+rmSync(TREE, { recursive: true, force: true })
+const bad = results.filter((r) => r.verdict !== 'KILLED')
+const covered = results.reduce((n, r) => n + r.markers.length, 0)
+console.log(`\n${results.length - bad.length}/${results.length} mutations killed, covering ${covered} marker assertions.`)
+if (bad.length) {
+  console.log('\nNot killed:')
+  for (const r of bad) console.log(`  ${r.id}: ${r.verdict}`)
+  console.log('\nDOES NOT BUILD is a broken PATCH, not a surviving mutation: fix the patch and re-run.')
+  console.log('SURVIVED is evidence about the SOURCE or the test, and is the one worth stopping for.')
+}
+process.exit(bad.length ? 1 : 0)
