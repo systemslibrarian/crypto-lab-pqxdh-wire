@@ -19,7 +19,11 @@ const [command, id] = process.argv.slice(2)
 
 if (command === 'list' || !command) {
   for (const [key, entry] of Object.entries(registry.mutations)) {
-    console.log(`${key}\n  ${entry.file}\n  covers: ${entry.covers.join(', ')}\n  ${entry.why}\n`)
+    console.log(`${key}\n  ${entry.file}`)
+    for (const [marker, kill] of Object.entries(entry.kills ?? {})) {
+      console.log(`  kills ${marker} in: ${kill.test}`)
+    }
+    console.log(`  ${entry.why}\n`)
   }
   process.exit(0)
 }
