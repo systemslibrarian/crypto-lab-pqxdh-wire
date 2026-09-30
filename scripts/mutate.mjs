@@ -183,13 +183,30 @@ const NOT_A_KILL = [
 ]
 const notAKill = (output) => NOT_A_KILL.find(({ pattern }) => pattern.test(strip(output)))?.label ?? null
 
-function runTest(title) {
-  const cmd = `npx playwright test e2e/verdicts.spec.ts e2e/claims.spec.ts -g ${JSON.stringify(title)} --reporter=list --retries=0`
+/* The WHOLE suite, never `-g` on one test.
+ *
+ * This lab's e2e/global-teardown.ts fails the run when any recorded kill in
+ * verdict-mutations.json did not execute, which is the mechanism that makes an
+ * unperformed record impossible to leave lying around. A single-test run
+ * therefore CANNOT exit 0 here: the named test passes and the teardown fails on
+ * the other twelve. The first version of this loop used `-g` and reported all 13
+ * baselines red, which was true of the command and false of the lab.
+ *
+ * So the suite runs whole, once per phase, and the per-test answer is read out
+ * of the reporter. */
+function runSuite() {
+  const cmd = 'npx playwright test e2e/verdicts.spec.ts e2e/claims.spec.ts --reporter=list --retries=0'
   try {
     return { failed: false, output: sh(cmd) }
   } catch (err) {
     return { failed: true, output: `${err.stdout ?? ''}${err.stderr ?? ''}` }
   }
+}
+
+/** Failing test titles, as the list reporter prints them: `  N) path:line > title`. */
+function failingTitles(output) {
+  return [...strip(output).matchAll(/^\s*\d+\)\s+(.+?)(?:\s*[\u2500-]{3,})?\s*$/gm)]
+    .map((m) => m[1].trim())
 }
 
 function apply(entry, forward) {
@@ -211,11 +228,16 @@ if (!build()) {
 const baselineHash = bundleHash()
 console.log(`baseline bundle ${baselineHash}\n`)
 
-const baselines = new Map()
-const baselineFor = (title) => {
-  if (!baselines.has(title)) baselines.set(title, runTest(title))
-  return baselines.get(title)
+console.log('running the unmutated baseline suite...')
+const baseline = runSuite()
+if (baseline.failed) {
+  console.error('The unmutated suite does not pass in the isolated tree. Nothing below would mean')
+  console.error('anything: a mutation "caught" by an already-red suite is caught by nothing.\n')
+  console.error(strip(baseline.output).split('\n').slice(-25).join('\n'))
+  rmSync(TREE, { recursive: true, force: true })
+  process.exit(2)
 }
+console.log(`baseline suite PASSED (${(strip(baseline.output).match(/(\d+)\s+passed/) || [])[1] ?? '?'} tests)\n`)
 
 const results = []
 for (const id of ids) {
@@ -223,12 +245,16 @@ for (const id of ids) {
   const markers = Object.entries(entry.kills ?? {})
   process.stdout.write(`${id.padEnd(38)} `)
   try {
-    const redBaselines = markers.filter(([, k]) => baselineFor(k.test).failed)
     const beforeMd5 = md5(entry.file)
     apply(entry, true)
     const built = build()
     const mutatedHash = built ? bundleHash() : null
-    const runs = built ? markers.map(([marker, k]) => [marker, runTest(k.test)]) : []
+    const mutated = built ? runSuite() : { failed: false, output: '' }
+    const failed = built ? failingTitles(mutated.output) : []
+    const runs = markers.map(([marker, k]) => [
+      marker,
+      { failed: failed.some((t) => t.includes(k.test)), output: mutated.output },
+    ])
     apply(entry, false)
     build()
     const restoredHash = bundleHash()
@@ -243,9 +269,7 @@ for (const id of ids) {
     const survived = runs.filter(([, r]) => !r.failed).map(([m]) => m)
     const wrongName = runs.filter(([m, r]) => r.failed && !strip(r.output).includes(m)).map(([m]) => m)
 
-    const verdict = redBaselines.length
-      ? `BASELINE ALREADY RED (${redBaselines.map(([m]) => m).join(', ')})`
-      : !built
+    const verdict = !built
         ? 'DOES NOT BUILD'
         : mutatedHash === baselineHash
           ? 'BUNDLE UNCHANGED'
