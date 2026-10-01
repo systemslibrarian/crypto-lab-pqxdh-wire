@@ -132,4 +132,9 @@ jobs:
           # gate, and an annotation nobody reads — structurally the same swallow that
           # hid four separate non-deploy bugs across the fleet on 2026-08-20.
           [[ -n "$merged" ]] || { echo "::error::gate passed but the merge did not land after 3 attempts"; exit 1; }
+          # A merge made with GITHUB_TOKEN raises no push event -- GitHub suppresses
+          # them so workflows cannot retrigger themselves -- so deploy would never run
+          # and the site would keep serving the previous build. Ask for it explicitly;
+          # a workflow_dispatch through the API is not suppressed. The dispatched run
+          # is the same gate-then-deploy pipeline, so a bad merge still ships nothing.
           gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
