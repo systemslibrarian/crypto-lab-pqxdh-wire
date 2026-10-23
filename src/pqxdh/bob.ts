@@ -21,7 +21,8 @@ export async function runBob(
   if (
     message.signedPrekeyId !== bundle.signedPrekeyId ||
     message.oneTimePrekeyId !== bundle.oneTimePrekeyId ||
-    message.pqPrekeyId !== bundle.pqPrekeyId
+    message.pqPrekeyId !== bundle.pqPrekeyId ||
+    message.pqPrekeyKind !== bundle.pqPrekeyKind
   ) {
     throw new HandshakeAbort('Initial message references an unknown prekey')
   }
