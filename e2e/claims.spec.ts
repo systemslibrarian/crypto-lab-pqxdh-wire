@@ -76,6 +76,19 @@ test('retires a completed handshake on reset and preserves it for a no-op check'
   await expect(page.locator('#comparison-panel')).toBeHidden()
   await expect(page.locator('#bundle-panel')).toBeHidden()
   await expect(page.locator('#protocol-status')).toContainText('READY')
+  await expect(page.locator('[data-test="alice-sk"]')).toHaveText('not available')
+  await expect(page.locator('[data-test="bob-sk"]')).toHaveText('not available')
+  await expect(page.locator('body')).not.toContainText(honestKey ?? '')
+  for (const id of [
+    'value-dh1',
+    'value-dh2',
+    'value-dh3',
+    'value-dh4',
+    'value-ss',
+    'value-sk',
+  ]) {
+    await expect(page.locator(`[data-test="${id}"]`)).not.toHaveAttribute('title')
+  }
 })
 
 test('keeps hidden states genuinely hidden', async ({ page }) => {
@@ -83,6 +96,12 @@ test('keeps hidden states genuinely hidden', async ({ page }) => {
   await expect(page.locator('#message-panel')).toHaveAttribute('hidden', '')
   await expect(page.locator('#comparison-panel')).toHaveAttribute('hidden', '')
   await expect(page.locator('#bundle-panel')).toBeHidden()
+
+  const skipLink = page.locator('.skip-link')
+  await expect(skipLink).toHaveAttribute('href', '#app')
+  await skipLink.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.locator('#app')).toBeFocused()
 })
 
 test('reaches the authenticated impersonation negative-claim fixture', async ({ page }) => {
