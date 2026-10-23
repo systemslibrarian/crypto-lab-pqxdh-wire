@@ -24,6 +24,11 @@ describe('PQXDH handshake', () => {
     const session = await runVerifiedHandshake(false)
     expect(session.bundle.pqPrekeyKind).toBe('last-resort')
     expect(session.keysMatch).toBe(true)
+
+    session.alice.message.pqPrekeyKind = 'one-time'
+    await expect(
+      runBob(session.bobState, session.bundle, session.alice.message),
+    ).rejects.toThrow('Initial message references an unknown prekey')
   })
 
   it('omits DH4 when the curve one-time prekey is exhausted', async () => {

@@ -6,7 +6,7 @@ PQXDH Wire is an interactive, browser-only walkthrough of Signal's PQXDH Revisio
 
 The lab teaches one boundary: adding an independent post-quantum KEM secret to the X3DH transcript prevents a modeled future curve break from recovering the initial session key. The curve and lattice breaks are explicitly modeled by handing private values to an adversary module; no quantum algorithm runs in the browser.
 
-This is not production cryptography. It uses Ed25519 instead of XEdDSA and standardized FIPS 203 ML-KEM-1024 instead of Revision 3's example CRYSTALS-KYBER-1024. Kyber round 3 and ML-KEM are not wire-compatible. Keys remain in memory and are discarded on reload or reset.
+This is not production cryptography. It uses Ed25519 instead of XEdDSA and standardized FIPS 203 ML-KEM-1024 instead of Revision 3's example CRYSTALS-KYBER-1024. Kyber round 3 and ML-KEM are not wire-compatible. Reset best-effort overwrites the live handshake's retained secret arrays and removes rendered key text, but JavaScript cannot guarantee secure erasure; reload discards the page context.
 
 ## Exhibits
 
@@ -61,7 +61,7 @@ Vite prints the local URL. To run every gate exactly as CI does:
 ```bash
 npm run test:coverage
 npm run build
-npx playwright install --with-deps chromium
+npx playwright install chromium
 npm run test:a11y
 ```
 
@@ -92,7 +92,7 @@ quietly.
 
 The repository has **48 executable tests**: 22 Vitest unit/correctness tests and 26 Playwright tests (2 accessibility, 8 claims, 12 per-marker, 4 verdict-coverage), plus one run-scoped coverage rule checked in `globalTeardown` rather than as a test.
 
-V8 coverage over the cryptographic, protocol, model, and verification modules is 94.77% statements, 93.24% branches, 90.32% functions, and 95.04% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
+V8 coverage over the cryptographic, protocol, model, and verification modules is 95.55% statements, 94.80% branches, 90.62% functions, and 95.90% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
 
 Three specification known-answer tests are pinned in source:
 
