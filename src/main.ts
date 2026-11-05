@@ -2,6 +2,7 @@ import './styles.css'
 
 import { bytesToHex, equalBytes, shortHex } from './crypto/bytes.js'
 import { runAlice, type AliceResult } from './pqxdh/alice.js'
+import { retireHandshakeSecrets } from './pqxdh/retire'
 import { runBob, type BobResult } from './pqxdh/bob.js'
 import { createBobState, publishBundle } from './pqxdh/bundle.js'
 import { F_PREFIX } from './pqxdh/kdf.js'
@@ -350,48 +351,8 @@ async function advanceHandshake(): Promise<void> {
   }
 }
 
-function wipeSecrets(...values: Array<Uint8Array | undefined>): void {
-  for (const value of values) value?.fill(0)
-}
-
-function retireHandshakeSecrets(): void {
-  if (bobState) {
-    wipeSecrets(
-      bobState.identityDh.secretKey,
-      bobState.identitySigning.secretKey,
-      bobState.signedPrekey.secretKey,
-      bobState.oneTimePrekey.secretKey,
-      bobState.pqOneTimePrekey.secretKey,
-      bobState.pqLastResortPrekey.secretKey,
-    )
-  }
-  if (alice) {
-    wipeSecrets(
-      alice.identity.secretKey,
-      alice.ephemeral.secretKey,
-      alice.components.dh1,
-      alice.components.dh2,
-      alice.components.dh3,
-      alice.components.dh4,
-      alice.components.sharedSecret,
-      alice.sessionKey,
-    )
-  }
-  if (bob) {
-    wipeSecrets(
-      bob.components.dh1,
-      bob.components.dh2,
-      bob.components.dh3,
-      bob.components.dh4,
-      bob.components.sharedSecret,
-      bob.sessionKey,
-      bob.plaintext,
-    )
-  }
-}
-
 function resetHandshake(): void {
-  retireHandshakeSecrets()
+  retireHandshakeSecrets(bobState, alice, bob)
   step = 0
   bobState = undefined
   bundle = undefined

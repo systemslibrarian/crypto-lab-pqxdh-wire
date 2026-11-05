@@ -90,9 +90,9 @@ quietly.
 
 ## Build & Verify
 
-The repository has **48 executable tests**: 22 Vitest unit/correctness tests and 26 Playwright tests (2 accessibility, 8 claims, 12 per-marker, 4 verdict-coverage), plus one run-scoped coverage rule checked in `globalTeardown` rather than as a test.
+The repository has **51 executable tests**: 25 Vitest unit/correctness tests and 26 Playwright tests (2 accessibility, 8 claims, 12 per-marker, 4 verdict-coverage), plus one run-scoped coverage rule checked in `globalTeardown` rather than as a test.
 
-V8 coverage over the cryptographic, protocol, model, and verification modules is 95.55% statements, 94.80% branches, 90.62% functions, and 95.90% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
+V8 coverage over the cryptographic, protocol, model, and verification modules is 95.80% statements, 95.18% branches, 91.17% functions, and 96.12% lines. CI enforces floors of 90% statements, 85% branches, 85% functions, and 90% lines.
 
 Three specification known-answer tests are pinned in source:
 
