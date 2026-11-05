@@ -2,6 +2,7 @@ import './styles.css'
 
 import { bytesToHex, equalBytes, shortHex } from './crypto/bytes.js'
 import { runAlice, type AliceResult } from './pqxdh/alice.js'
+import { retireHandshakeSecrets } from './pqxdh/retire'
 import { runBob, type BobResult } from './pqxdh/bob.js'
 import { createBobState, publishBundle } from './pqxdh/bundle.js'
 import { F_PREFIX } from './pqxdh/kdf.js'
@@ -237,7 +238,7 @@ app.innerHTML = `
       <details>
         <summary>Implementation profile and deviations</summary>
         <div class="disclosure-copy">
-          <p><strong>Real:</strong> Noble X25519 and strict Ed25519, Noble ML-KEM-1024, HKDF-SHA-512, and WebCrypto AES-256-GCM. Alice and Bob derive independently. Keys exist only in memory and a reset replaces them.</p>
+          <p><strong>Real:</strong> Noble X25519 and strict Ed25519, Noble ML-KEM-1024, HKDF-SHA-512, and WebCrypto AES-256-GCM. Alice and Bob derive independently. Reset overwrites the live handshake's retained secret arrays and clears rendered key text on a best-effort basis; JavaScript cannot guarantee secure erasure.</p>
           <p><strong>Profile:</strong> <code>F || DH1 || DH2 || DH3 || DH4 || SS</code>, zero SHA-512-length salt, and info <code>PQXDH_CURVE25519_SHA-512_ML-KEM-1024</code>. Associated data binds <code>IK_A || IK_B || PQPK_B</code>.</p>
           <p><strong>Deviation:</strong> Revision 3 specifies XEdDSA and gives CRYSTALS-KYBER-1024 as its example. This browser lab uses separate strict Ed25519 signatures and standardized FIPS 203 ML-KEM-1024. Kyber round 3 and ML-KEM are not wire-compatible.</p>
           <p><strong>Verification scope:</strong> three spec KATs pass: one RFC 7748 X25519 vector, one RFC 5869 HKDF vector, and NIST ACVP FIPS 203 ML-KEM-1024 keyGen case tgId 3 / tcId 51. No stable byte-for-byte libsignal PQXDH transcript vector was found in the public repository search on 2026-09-11, so independent peer derivation closes that gap.</p>
@@ -315,6 +316,7 @@ async function advanceHandshake(): Promise<void> {
     return
   }
   stepButton.disabled = true
+  resetButton.disabled = true
   try {
     if (step === 0) {
       bobState = createBobState()
@@ -345,10 +347,12 @@ async function advanceHandshake(): Promise<void> {
     protocolStatus.textContent = `ABORT — ${error instanceof Error ? error.message : 'unknown error'}`
   } finally {
     stepButton.disabled = false
+    resetButton.disabled = false
   }
 }
 
 function resetHandshake(): void {
+  retireHandshakeSecrets(bobState, alice, bob)
   step = 0
   bobState = undefined
   bundle = undefined
@@ -405,10 +409,15 @@ function renderHandshake(): void {
     for (const name of ['DH1', 'DH2', 'DH3', 'DH4', 'SS']) {
       setMaterialState(name, 'sealed', 'SEALED')
       const output = document.querySelector<HTMLElement>(`[data-test="value-${name.toLowerCase()}"]`)
-      if (output) output.textContent = 'not derived'
+      if (output) {
+        output.textContent = 'not derived'
+        output.removeAttribute('title')
+      }
     }
     setMaterialState('SK', 'sealed', 'WAITING')
-    requiredElement('[data-test="value-sk"]').textContent = 'not derived'
+    const sessionKey = requiredElement<HTMLElement>('[data-test="value-sk"]')
+    sessionKey.textContent = 'not derived'
+    sessionKey.removeAttribute('title')
   }
 
   renderComparison()
@@ -480,6 +489,8 @@ function renderComparison(): void {
     verdict.dataset.result = 'pending'
     verdict.classList.remove('verdict-pass', 'verdict-alarm')
     title.textContent = 'Session keys not compared yet'
+    requiredElement('[data-test="alice-sk"]').textContent = 'not available'
+    requiredElement('[data-test="bob-sk"]').textContent = 'not available'
     return
   }
   const matched = sessionKeysMatch(alice.sessionKey, bob.sessionKey)
