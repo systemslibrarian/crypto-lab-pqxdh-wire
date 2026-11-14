@@ -241,7 +241,7 @@ app.innerHTML = `
           <p><strong>Real:</strong> Noble X25519 and strict Ed25519, Noble ML-KEM-1024, HKDF-SHA-512, and WebCrypto AES-256-GCM. Alice and Bob derive independently. Reset overwrites the live handshake's retained secret arrays and clears rendered key text on a best-effort basis; JavaScript cannot guarantee secure erasure.</p>
           <p><strong>Profile:</strong> <code>F || DH1 || DH2 || DH3 || DH4 || SS</code>, zero SHA-512-length salt, and info <code>PQXDH_CURVE25519_SHA-512_ML-KEM-1024</code>. Associated data binds <code>IK_A || IK_B || PQPK_B</code>.</p>
           <p><strong>Deviation:</strong> Revision 3 specifies XEdDSA and gives CRYSTALS-KYBER-1024 as its example. This browser lab uses separate strict Ed25519 signatures and standardized FIPS 203 ML-KEM-1024. Kyber round 3 and ML-KEM are not wire-compatible.</p>
-          <p><strong>Verification scope:</strong> three spec KATs pass: one RFC 7748 X25519 vector, one RFC 5869 HKDF vector, and NIST ACVP FIPS 203 ML-KEM-1024 keyGen case tgId 3 / tcId 51. No stable byte-for-byte libsignal PQXDH transcript vector was found in the public repository search on 2026-09-11, so independent peer derivation closes that gap.</p>
+          <p><strong>Verification scope:</strong> three spec KATs pass: one RFC 7748 X25519 vector, one RFC 5869 HKDF vector, and NIST ACVP FIPS 203 ML-KEM-1024 keyGen case tgId 3 / tcId 51. Alice and Bob independently derive the same key in this lab. That checks internal consistency. Byte-for-byte interoperability with libsignal has not been verified.</p>
         </div>
       </details>
     </section>
