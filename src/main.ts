@@ -242,6 +242,7 @@ app.innerHTML = `
           <p><strong>Profile:</strong> <code>F || DH1 || DH2 || DH3 || DH4 || SS</code>, zero SHA-512-length salt, and info <code>PQXDH_CURVE25519_SHA-512_ML-KEM-1024</code>. Associated data binds <code>IK_A || IK_B || PQPK_B</code>.</p>
           <p><strong>Deviation:</strong> Revision 3 specifies XEdDSA and gives CRYSTALS-KYBER-1024 as its example. This browser lab uses separate strict Ed25519 signatures and standardized FIPS 203 ML-KEM-1024. Kyber round 3 and ML-KEM are not wire-compatible.</p>
           <p><strong>Verification scope:</strong> three spec KATs pass: one RFC 7748 X25519 vector, one RFC 5869 HKDF vector, and NIST ACVP FIPS 203 ML-KEM-1024 keyGen case tgId 3 / tcId 51. Alice and Bob independently derive the same key in this lab. That checks internal consistency. Byte-for-byte interoperability with libsignal has not been verified.</p>
+          <p><strong>Research update (15 November 2026):</strong> Cheval, Jacomme and Richards (ePrint 2026/727, in the record below) reported two forward-secrecy weaknesses in libsignal's handling of the PQXDH initial message, both fixed in libsignal within a week of their reports: a message for a session with no one-time curve prekey could be replayed by mangling Alice's X25519 ephemeral key with a small-order component so Bob derived two sessions with one SK, and an unconfirmed initial state holding Bob's signed-prekey secret could be stored when the confirmation ciphertext was tried against other sessions. Both need a later compromise of stored state, and the weak-state issue additionally requires the ML-KEM/Kyber component to be broken (a loss of PQXDH's hybrid forward secrecy). This single-session lab has no replay handling and no torsion-free check; the last-resort exhibit measures prekey reuse only.</p>
         </div>
       </details>
     </section>
@@ -256,6 +257,7 @@ app.innerHTML = `
         <li><a href="https://csrc.nist.gov/pubs/fips/203/final">FIPS 203</a><span>ML-KEM standard</span></li>
         <li><a href="https://signal.org/blog/spqr/">Signal Protocol and Post-Quantum Ratchets</a><span>2025-10-02 · SPQR and Triple Ratchet</span></li>
         <li><a href="https://www.usenix.org/conference/usenixsecurity24/presentation/bhargavan">Bhargavan et al., Formal Verification of PQXDH</a><span>USENIX Security 2024</span></li>
+        <li><a href="https://eprint.iacr.org/2026/727">Cheval, Jacomme &amp; Richards, Automated formal analysis of Signal's Double Ratchet</a><span>ePrint 2026/727 · 2026-04-14 · IEEE S&amp;P 2026 · PQXDH replay and weak-state fixes in libsignal</span></li>
       </ul>
     </section>
   </div>

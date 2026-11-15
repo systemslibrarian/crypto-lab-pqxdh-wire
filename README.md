@@ -47,6 +47,10 @@ Signal introduced PQXDH to resist harvest-now-decrypt-later attacks against asyn
 
 Signal announced SPQR and the Triple Ratchet on 2025-10-02 to add post-quantum forward secrecy and post-compromise security after session setup.
 
+## Research update — 15 November 2026
+
+[Cheval, Jacomme and Richards, ePrint 2026/727](https://eprint.iacr.org/2026/727) (full version of an IEEE S&P 2026 paper, posted 14 April 2026) analysed the Double Ratchet composed with PQXDH in ProVerif and reported two forward-secrecy weaknesses in libsignal's handling of the PQXDH initial message, both of which they say Signal fixed in libsignal within a week of the report: a PQXDH initial message for a session with no one-time curve prekey could be replayed by mangling Alice's X25519 ephemeral public key with a small-order component, so Bob derived two sessions with the same SK (closed by a torsion-free key check); and an unconfirmed initial state holding Bob's signed-prekey private key could be committed to memory when the confirmation ciphertext was tried against other sessions (closed by no longer trying them). Both need a later compromise of stored state to matter — the authors stress the weak-state issue does not affect secrecy or authentication without one — and the replay hit sessions that had no one-time curve prekey and used the signed last-resort PQ prekey. The weak-state issue additionally requires the ML-KEM/Kyber component to be broken: the paper frames it, under the assumption that Kyber is insecure and X25519 is secure, as a loss of PQXDH's hybrid forward secrecy. Exhibit 4 here reuses that last-resort key but measures only the reuse itself; this single-session lab has no Sesame layer, no replay handling and no torsion-free check, so neither attack nor its fix is demonstrated, and the paper does not change what exhibits 1 and 2 show about a modeled curve break.
+
 ## How to Run Locally
 
 Requires Node.js 22 or newer.
