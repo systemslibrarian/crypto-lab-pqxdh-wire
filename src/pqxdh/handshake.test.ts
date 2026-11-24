@@ -59,7 +59,7 @@ describe('PQXDH handshake', () => {
     alice.message.kemCiphertext = alice.message.kemCiphertext.slice()
     alice.message.kemCiphertext[0] ^= 1
     await expect(runBob(state, bundle, alice.message)).rejects.toThrow(
-      'Initial AEAD authentication failed after ML-KEM implicit rejection',
+      'Initial AEAD authentication failed',
     )
   })
 
@@ -168,12 +168,12 @@ describe('modeled limits', () => {
     const classical = runRatchetModel(compromisedRoot, false)
     const quantum = runRatchetModel(compromisedRoot, true)
 
-    expect(classical.healed).toBe(true)
+    expect(classical.advanced).toBe(true)
     expect(classical.stillReadable).toBe(false)
-    expect(quantum.healed).toBe(true)
+    expect(quantum.advanced).toBe(true)
     expect(quantum.stillReadable).toBe(true)
 
-    // `healed` must mean the chain moved, not that the loop ran a fixed number
+    // `advanced` must mean the chain moved, not that the loop ran a fixed number
     // of times: every root is distinct and the last one is not the compromise.
     const distinct = new Set(classical.honestRoots.map((root) => bytesToHex(root)))
     expect(distinct.size).toBe(4)

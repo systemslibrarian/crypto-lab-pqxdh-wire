@@ -35,7 +35,7 @@ export interface AdversaryStepGrant {
 export interface RatchetModelResult {
   honestRoots: Uint8Array[]
   adversaryRoots: Uint8Array[]
-  healed: boolean
+  advanced: boolean
   stillReadable: boolean
 }
 
@@ -102,9 +102,9 @@ export function runRatchetModel(
 
   // Measured, not counted. `honestRoots.length === 4` is true by construction of
   // the loop above, so it reported HEALED even if every step had left the root
-  // unchanged. Healing means each step actually replaced the root and the chain
+  // unchanged. Advancement means each step actually replaced the root and the chain
   // has left the compromised value behind.
-  const healed =
+  const advanced =
     honestRoots.length === 4 &&
     honestRoots.every(
       (root, index) => index === 0 || !equalBytes(root, honestRoots[index - 1]),
@@ -113,7 +113,7 @@ export function runRatchetModel(
   return {
     honestRoots,
     adversaryRoots,
-    healed,
+    advanced,
     stillReadable,
   }
 }

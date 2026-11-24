@@ -97,13 +97,13 @@
     },
     "bob-accepts-failed-aead": {
       "file": "src/pqxdh/bob.ts",
-      "find": "    throw new HandshakeAbort(\n      'Initial AEAD authentication failed after ML-KEM implicit rejection',\n    )",
+      "find": "    throw new HandshakeAbort(\n      'Initial AEAD authentication failed',\n    )",
       "replace": "    return { components, sessionKey, plaintext: new Uint8Array() }",
       "kills": {
         "kem-tamper-abort": {
           "test": "kem-tamper-abort names the AEAD as the place the mismatch surfaced",
           "claim": {
-            "contains": "REJECTED AT FIRST AEAD — Initial AEAD authentication failed after ML-KEM implicit rejection",
+            "contains": "REJECTED AT FIRST AEAD — Initial AEAD authentication failed",
             "absent": "UNEXPECTED ACCEPT",
             "result": "alarm"
           }
@@ -120,7 +120,7 @@
           "test": "last-resort-reuse measures the three facts it claims",
           "claim": {
             "contains": ["SAME PQ KEY ID", "Reuse does not reveal either SK by itself"],
-            "absent": "NO LAST-RESORT REUSE OBSERVED",
+            "absent": "FALLBACK CHECK FAILED",
             "result": "alarm"
           }
         }
@@ -151,7 +151,7 @@
         "ratchet-heal": {
           "test": "ratchet-heal reaches both outcomes from a chain that is always built",
           "claim": {
-            "contains": "HEALED — AND STILL READ",
+            "contains": "NO RECOVERY — OBSERVER STILL READS EACH ROOT",
             "result": "alarm"
           }
         }
@@ -202,8 +202,8 @@
         "wire-secrecy": {
           "test": "wire-secrecy searches the sent bytes rather than asserting they are clean",
           "claim": {
-            "contains": "searched the sent bytes for all 192 bytes",
-            "absent": "SECRET BYTES FOUND ON THE WIRE",
+            "contains": "searched the binary fields for complete secret values totaling 192 bytes",
+            "absent": "COMPLETE SECRET VALUE FOUND",
             "result": "pass"
           }
         },
@@ -212,7 +212,7 @@
           "claim": { "text": "0 B", "value": "0" }
         }
       },
-      "why": "Inverts the byte comparison the secret search rests on, so every secret 'appears' on the wire. NO SECRET ON THE WIRE must stop rendering and the found-bytes count must move off 0 — this is the mutation a hard-coded '0 B' could not fail."
+      "why": "Inverts the byte comparison the secret search rests on, so every secret 'appears' on the wire. NO COMPLETE VALUE FOUND must stop rendering and the found-bytes count must move off 0 — this is the mutation a hard-coded '0 B' could not fail."
     },
     "wire-counts-secrets-not-their-bytes": {
       "file": "src/verify/wire.ts",

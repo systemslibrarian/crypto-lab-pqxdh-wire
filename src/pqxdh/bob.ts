@@ -70,7 +70,7 @@ export async function runBob(
     return { components, sessionKey, plaintext }
   } catch {
     throw new HandshakeAbort(
-      'Initial AEAD authentication failed after ML-KEM implicit rejection',
+      'Initial AEAD authentication failed',
     )
   }
 }

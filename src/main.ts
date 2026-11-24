@@ -79,7 +79,7 @@ app.innerHTML = `
       <section class="bundle-strip" id="bundle-panel" aria-labelledby="bundle-title" hidden>
         <div>
           <span class="mini-label">BOB'S PUBLISHED BUNDLE</span>
-          <strong id="bundle-title">Signatures verified before any secret is derived</strong>
+          <strong id="bundle-title">Signed prekeys published; Alice has not verified them yet</strong>
         </div>
         <dl class="bundle-values">
           <div><dt>SPK_B</dt><dd id="bundle-spk">pending</dd></div>
@@ -117,8 +117,8 @@ app.innerHTML = `
         <dl class="message-metrics">
           <div><dt>KEM CT</dt><dd data-claim="wire-kem-ct-bytes" data-value="">pending</dd></div>
           <div><dt>AD</dt><dd data-claim="wire-ad-bytes" data-value="">pending</dd></div>
-          <div><dt>Secret bytes searched</dt><dd data-claim="wire-scanned-secret-bytes" data-value="">pending</dd></div>
-          <div><dt>Secret bytes found</dt><dd data-claim="wire-secret-bytes" data-value="">pending</dd></div>
+          <div><dt>Total size of searched values</dt><dd data-claim="wire-scanned-secret-bytes" data-value="">pending</dd></div>
+          <div><dt>Total size of whole-value matches</dt><dd data-claim="wire-secret-bytes" data-value="">pending</dd></div>
         </dl>
       </section>
 
@@ -306,6 +306,7 @@ const stepLabels = [
 stepButton.addEventListener('click', () => void advanceHandshake())
 resetButton.addEventListener('click', resetHandshake)
 quantumToggle.addEventListener('change', () => {
+  clearRatchetEvidence()
   latticeToggle.disabled = !quantumToggle.checked
   if (!quantumToggle.checked) latticeToggle.checked = false
   renderThreatModel()
@@ -328,7 +329,7 @@ async function advanceHandshake(): Promise<void> {
       alice = await runAlice(bundle)
       protocolStatus.textContent = 'ALICE COMPLETE — four DH outputs and one ML-KEM secret entered HKDF'
     } else if (step === 2 && alice) {
-      protocolStatus.textContent = 'MESSAGE SENT — no shared secret or private key crossed the wire'
+      protocolStatus.textContent = 'MESSAGE SENT — inspect the binary-field scan below'
     } else if (step === 3 && bobState && bundle && alice) {
       bob = await runBob(bobState, bundle, alice.message)
       protocolStatus.textContent = 'BOB COMPLETE — decapsulation, four DH operations, and AEAD verification passed'
@@ -353,7 +354,14 @@ async function advanceHandshake(): Promise<void> {
   }
 }
 
+function clearRatchetEvidence(): void {
+  const output = requiredElement<HTMLOutputElement>('#ratchet-output')
+  output.dataset.result = 'pending'
+  output.textContent = 'Run the ratchet for the current handshake and curve assumption'
+}
+
 function resetHandshake(): void {
+  clearRatchetEvidence()
   retireHandshakeSecrets(bobState, alice, bob)
   step = 0
   bobState = undefined
@@ -381,6 +389,9 @@ function renderHandshake(): void {
   const bundlePanel = requiredElement<HTMLElement>('#bundle-panel')
   bundlePanel.hidden = step < 1
   if (bundle) {
+    requiredElement('#bundle-title').textContent = alice
+      ? 'Alice verified both prekey signatures before deriving her secrets'
+      : 'Signed prekeys published; Alice has not verified them yet'
     requiredElement('#bundle-spk').textContent = bundle.signedPrekeyId
     requiredElement('#bundle-opk').textContent = bundle.oneTimePrekeyId ?? 'exhausted'
     requiredElement('#bundle-pq').textContent = `${bundle.pqPrekeyId} · ${bundle.pqPrekeyKind}`
@@ -475,8 +486,8 @@ function renderWire(): void {
   const clean = measurement.secretBytesOnWire === 0
   output.dataset.result = clean ? 'pass' : 'alarm'
   output.textContent = clean
-    ? `NO SECRET ON THE WIRE — searched the sent bytes for all ${BYTES.format(measurement.scannedSecretBytes)} bytes of this session's KDF inputs and session key, and found none`
-    : `SECRET BYTES FOUND ON THE WIRE — ${BYTES.format(measurement.secretBytesOnWire)} of ${BYTES.format(measurement.scannedSecretBytes)} searched secret bytes appear in the sent bytes`
+    ? `NO COMPLETE VALUE FOUND — searched the binary fields for complete secret values totaling ${BYTES.format(measurement.scannedSecretBytes)} bytes. This checks the DH outputs, KEM secret and session key as raw byte strings. It excludes identifiers and does not test for partial or encoded leakage.`
+    : `COMPLETE SECRET VALUE FOUND — matching whole values total ${BYTES.format(measurement.secretBytesOnWire)} of the ${BYTES.format(measurement.scannedSecretBytes)} bytes searched.`
 }
 
 /**
@@ -575,7 +586,7 @@ requiredElement<HTMLButtonElement>('#bad-signature-button').addEventListener('cl
   candidate.pqPrekeySignature[0] ^= 1
   try {
     await runAlice(candidate)
-    output.dataset.result = 'pass'
+    output.dataset.result = 'alarm'
     output.textContent = 'UNEXPECTED ACCEPT — invariant violated'
   } catch (error) {
     output.dataset.result = 'alarm'
@@ -592,7 +603,7 @@ requiredElement<HTMLButtonElement>('#tamper-button').addEventListener('click', a
   sender.message.kemCiphertext[0] ^= 1
   try {
     await runBob(state, candidate, sender.message)
-    output.dataset.result = 'pass'
+    output.dataset.result = 'alarm'
     output.textContent = 'UNEXPECTED ACCEPT — invariant violated'
   } catch (error) {
     output.dataset.result = 'alarm'
@@ -600,7 +611,9 @@ requiredElement<HTMLButtonElement>('#tamper-button').addEventListener('click', a
   }
 })
 
+let reuseRun = 0
 requiredElement<HTMLInputElement>('#reuse-toggle').addEventListener('change', async (event) => {
+  const run = ++reuseRun
   const checked = (event.currentTarget as HTMLInputElement).checked
   const output = requiredElement<HTMLOutputElement>('#reuse-output')
   if (!checked) {
@@ -608,34 +621,44 @@ requiredElement<HTMLInputElement>('#reuse-toggle').addEventListener('change', as
     output.textContent = 'One-time PQ prekeys are available'
     return
   }
-  const state = createBobState()
-  const fallbackBundle = publishBundle(state, { useOneTimePq: false })
-  const first = await runAlice(fallbackBundle)
-  const second = await runAlice(fallbackBundle)
+  output.dataset.result = 'pending'
+  output.textContent = 'Checking two sessions with the fallback key'
+  try {
+    const state = createBobState()
+    const fallbackBundle = publishBundle(state, { useOneTimePq: false })
+    const first = await runAlice(fallbackBundle)
+    if (run !== reuseRun) return
+    const second = await runAlice(fallbackBundle)
+    if (run !== reuseRun) return
 
-  // Measured, not narrated. "SAME PQ KEY ID" used to print whichever id the
-  // bundle happened to carry, without ever comparing the two sessions or
-  // checking that the served key was the last-resort one — a sentence true of
-  // the fixture by construction rather than by observation.
-  const checks: ReadonlyArray<readonly [string, boolean]> = [
-    ['served key is the last-resort key', fallbackBundle.pqPrekeyKind === 'last-resort'],
-    [
-      'both sessions cite one PQ prekey id',
-      first.message.pqPrekeyId === second.message.pqPrekeyId,
-    ],
-    [
-      'per-session SS still differ',
-      !equalBytes(first.components.sharedSecret, second.components.sharedSecret),
-    ],
-  ]
-  const verdicts = checks
-    .map(([name, passed]) => `${name}: ${passed ? 'PASS' : 'FAIL'}`)
-    .join(' · ')
-  const reused = checks.every(([, passed]) => passed)
-  output.dataset.result = reused ? 'alarm' : 'pass'
-  output.innerHTML = reused
-    ? `<strong>SAME PQ KEY ID — ${fallbackBundle.pqPrekeyId}</strong><span data-test="reuse-checks">${verdicts}</span><span>Session SS values differ: ${shortHex(first.components.sharedSecret)} / ${shortHex(second.components.sharedSecret)}. Reuse does not reveal either SK by itself, but future compromise of this retained last-resort private key affects every session whose remaining inputs are also recovered.</span>`
-    : `<strong>NO LAST-RESORT REUSE OBSERVED — a check did not report success</strong><span data-test="reuse-checks">${verdicts}</span>`
+    // Measured, not narrated. "SAME PQ KEY ID" used to print whichever id the
+    // bundle happened to carry, without ever comparing the two sessions or
+    // checking that the served key was the last-resort one — a sentence true of
+    // the fixture by construction rather than by observation.
+    const checks: ReadonlyArray<readonly [string, boolean]> = [
+      ['served key is the last-resort key', fallbackBundle.pqPrekeyKind === 'last-resort'],
+      [
+        'both sessions cite one PQ prekey id',
+        first.message.pqPrekeyId === second.message.pqPrekeyId,
+      ],
+      [
+        'per-session SS still differ',
+        !equalBytes(first.components.sharedSecret, second.components.sharedSecret),
+      ],
+    ]
+    const verdicts = checks
+      .map(([name, passed]) => `${name}: ${passed ? 'PASS' : 'FAIL'}`)
+      .join(' · ')
+    const reused = checks.every(([, passed]) => passed)
+    output.dataset.result = 'alarm'
+    output.innerHTML = reused
+      ? `<strong>SAME PQ KEY ID — ${fallbackBundle.pqPrekeyId}</strong><span data-test="reuse-checks">${verdicts}</span><span>Session SS values differ: ${shortHex(first.components.sharedSecret)} / ${shortHex(second.components.sharedSecret)}. Reuse does not reveal either SK by itself, but future compromise of this retained last-resort private key affects every session whose remaining inputs are also recovered.</span>`
+      : `<strong>FALLBACK CHECK FAILED — inspect the three observations</strong><span data-test="reuse-checks">${verdicts}</span>`
+  } catch {
+    if (run !== reuseRun) return
+    output.dataset.result = 'alarm'
+    output.textContent = 'Fallback check unavailable — both sessions must finish before comparing their keys'
+  }
 })
 
 requiredElement<HTMLButtonElement>('#impersonate-button').addEventListener('click', async () => {
@@ -687,13 +710,13 @@ requiredElement<HTMLButtonElement>('#ratchet-button').addEventListener('click', 
     `<span data-claim="${id}" data-value="${value}">${value}</span>`
   const honest = counted('ratchet-honest-updates', honestUpdates)
   const model = counted('ratchet-model-updates', modelUpdates)
-  output.dataset.result = result.healed && !result.stillReadable ? 'pass' : 'alarm'
-  if (!result.healed) {
+  output.dataset.result = result.advanced && !result.stillReadable ? 'pass' : 'alarm'
+  if (!result.advanced) {
     output.innerHTML = `<strong>DID NOT HEAL — root chain did not advance</strong>${roots}`
     return
   }
   output.innerHTML = result.stillReadable
-    ? `<strong>HEALED — AND STILL READ</strong>${roots}<span>${honest} honest root updates completed; the curve-break model recomputed ${model} of them.</span>`
+    ? `<strong>NO RECOVERY — OBSERVER STILL READS EACH ROOT</strong>${roots}<span>${honest} honest root updates completed; the curve-break model recomputed ${model} of them.</span>`
     : `<strong>HEALED</strong>${roots}<span>${honest} honest root updates completed; the classical observer recomputed ${model} of them and remained at the compromised root.</span>`
 })
 

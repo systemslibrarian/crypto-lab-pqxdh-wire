@@ -42,7 +42,7 @@ test('names each real rejection cause', async ({ page }) => {
   await expect(page.locator('#bad-signature-output')).toContainText('Signed ML-KEM prekey signature verification failed')
 
   await page.locator('#tamper-button').click()
-  await expect(page.locator('#tamper-output')).toContainText('Initial AEAD authentication failed after ML-KEM implicit rejection')
+  await expect(page.locator('#tamper-output')).toContainText('Initial AEAD authentication failed')
 })
 
 test('derives no adversary SK until both modeled assumptions are granted', async ({ page }) => {
@@ -62,6 +62,30 @@ test('shows last-resort reuse without claiming that reuse alone reveals SK', asy
   const output = page.locator('#reuse-output')
   await expect(output).toContainText('SAME PQ KEY ID')
   await expect(output).toContainText('Reuse does not reveal either SK by itself')
+  await page.locator('#reuse-toggle').uncheck()
+  // Hold the finished second encryption so an unchecked option is tested against a real late result.
+  await page.evaluate(() => {
+    let calls = 0
+    const encrypt = crypto.subtle.encrypt.bind(crypto.subtle)
+    crypto.subtle.encrypt = async (...args) => {
+      const bytes = await encrypt(...args)
+      if (++calls === 2) {
+        await new Promise<void>((resolve) => {
+          window.addEventListener('release-sample', () => resolve(), { once: true })
+          document.body.dataset.sample = 'waiting'
+        })
+      }
+      return bytes
+    }
+  })
+  await page.locator('#reuse-toggle').check()
+  await expect(page.locator('body')).toHaveAttribute('data-sample', 'waiting')
+  await page.locator('#reuse-toggle').uncheck()
+  await page.evaluate(async () => {
+    window.dispatchEvent(new Event('release-sample'))
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  })
+  await expect(output).toHaveText('One-time PQ prekeys are available')
 })
 
 test('retires a completed handshake on reset and preserves it for a no-op check', async ({ page }) => {
@@ -140,7 +164,8 @@ test('reaches both reduced-ratchet negative-claim outcomes', async ({ page }) =>
   expect(chain[0]).toBe(compromised.slice(0, 8))
 
   await page.locator('#quantum-toggle').check()
+  await expect(page.locator('[data-test="ratchet-roots"]')).toHaveCount(0)
   await page.locator('#ratchet-button').click()
-  await expect(page.locator('#ratchet-output')).toContainText('HEALED — AND STILL READ')
+  await expect(page.locator('#ratchet-output')).toContainText('NO RECOVERY — OBSERVER STILL READS EACH ROOT')
   await expect(page.getByText('this is one DH-root update', { exact: false })).toBeVisible()
 })

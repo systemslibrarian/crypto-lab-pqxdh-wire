@@ -177,7 +177,7 @@ test('kem-tamper-abort names the AEAD as the place the mismatch surfaced', async
   await page.locator('#tamper-button').click()
   await expectVerdict(page, 'kem-tamper-abort', {
     contains:
-      'REJECTED AT FIRST AEAD — Initial AEAD authentication failed after ML-KEM implicit rejection',
+      'REJECTED AT FIRST AEAD — Initial AEAD authentication failed',
     absent: 'UNEXPECTED ACCEPT',
     result: 'alarm',
   })
@@ -187,7 +187,7 @@ test('last-resort-reuse measures the three facts it claims', async ({ page }) =>
   await page.locator('#reuse-toggle').check()
   await expectVerdict(page, 'last-resort-reuse', {
     contains: ['SAME PQ KEY ID', 'Reuse does not reveal either SK by itself'],
-    absent: 'NO LAST-RESORT REUSE OBSERVED',
+    absent: 'FALLBACK CHECK FAILED',
     result: 'alarm',
   })
 
@@ -259,7 +259,7 @@ test('ratchet-heal reaches both outcomes from a chain that is always built', asy
   await page.locator('#quantum-toggle').check()
   await page.locator('#ratchet-button').click()
   await expectVerdict(page, 'ratchet-heal', {
-    contains: 'HEALED — AND STILL READ',
+    contains: 'NO RECOVERY — OBSERVER STILL READS EACH ROOT',
     result: 'alarm',
   })
   const broken = await readRootChain(output)
@@ -316,8 +316,8 @@ test('wire-secrecy searches the sent bytes rather than asserting they are clean'
   )
 
   await expectVerdict(page, 'wire-secrecy', {
-    contains: `searched the sent bytes for all ${searched.toLocaleString('en-US')} bytes`,
-    absent: 'SECRET BYTES FOUND ON THE WIRE',
+    contains: `searched the binary fields for complete secret values totaling ${searched.toLocaleString('en-US')} bytes`,
+    absent: 'COMPLETE SECRET VALUE FOUND',
     result: 'pass',
   })
   await expectClaim(page, 'wire-scanned-secret-bytes', {

@@ -3,5 +3,5 @@ export const TRANSCRIPT_DIFF = [
   { field: 'DH1–DH4', x3dh: '128 bytes', pqxdh: '128 bytes', changed: false },
   { field: 'SS', x3dh: 'absent', pqxdh: '32 bytes', changed: true },
   { field: 'KDF input', x3dh: '160 bytes', pqxdh: '192 bytes', changed: true },
-  { field: 'Initial message', x3dh: 'no KEM CT', pqxdh: 'adds 1,568-byte CT', changed: true },
+  { field: 'Initial message', x3dh: 'no KEM CT', pqxdh: 'adds a 1,568-byte KEM ciphertext and a PQ prekey identifier. Total overhead depends on encoding', changed: true },
 ] as const

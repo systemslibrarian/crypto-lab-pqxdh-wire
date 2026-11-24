@@ -35,7 +35,7 @@ export function containsBytes(haystack: Uint8Array, needle: Uint8Array): boolean
   return false
 }
 
-/** Exactly the bytes Alice puts on the wire — no private value is in scope here. */
+/** Join the five binary fields for the raw-value scan. IDs and framing are outside this view. */
 export function wireBytes(message: InitialMessage): Uint8Array {
   return concatBytes(
     message.aliceIdentityPublic,
@@ -51,6 +51,9 @@ export function measureWire(
   associatedData: Uint8Array,
   secrets: readonly Uint8Array[],
 ): WireMeasurement {
+  if (secrets.length === 0 || secrets.some((secret) => secret.length === 0)) {
+    throw new Error('A wire scan requires nonempty candidate values')
+  }
   const wire = wireBytes(message)
   let secretBytesOnWire = 0
   for (const secret of secrets) {

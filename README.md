@@ -15,8 +15,8 @@ This is not production cryptography. It uses Ed25519 instead of XEdDSA and stand
 3. **Break real checks** — corrupt the signed ML-KEM prekey and flip a ciphertext bit against the actual Ed25519, ML-KEM, and AES-GCM paths.
 4. **Reuse the fallback** — exhaust one-time PQ prekeys and watch the page measure three facts before it says anything: that the served key really is the last-resort key, that both sessions cite one PQ prekey id, and that the per-session KEM secrets still differ. It does not claim reuse alone reveals either session key.
 5. **Forge authentication** — grant an active model Bob's classical signing and curve identity secrets; every check passes while Alice talks to the adversary.
-6. **Follow the ratchet** — run a reduced three-step X25519 root-key model. The adversary keeps its own root chain, advanced only from the public transcript plus whatever the model grants it, so `HEALED` and `HEALED — AND STILL READ` are a comparison of two chains rather than a restatement of the premise.
-7. **Diff X3DH and PQXDH** — inspect the exact 32-byte KDF addition and 1,568-byte initial-message addition.
+6. **Follow the ratchet** — run a reduced three-step X25519 root-key model. The adversary keeps its own root chain, advanced only from the public transcript plus whatever the model grants it, so `HEALED` and `NO RECOVERY — OBSERVER STILL READS EACH ROOT` are outcomes of comparing the two chains. Root changes alone do not establish recovery.
+7. **Diff X3DH and PQXDH** — inspect the 32-byte KDF addition and the 1,568-byte KEM ciphertext. The initial message also references the PQ prekey. Total overhead depends on the encoding.
 
 ## When to Use It
 

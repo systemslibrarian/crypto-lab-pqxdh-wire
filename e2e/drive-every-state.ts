@@ -31,7 +31,7 @@ import { expect, type Page } from '@playwright/test'
  * | `#bad-signature-button` | its one press |
  * | `#tamper-button` | its one press |
  * | `#impersonate-button` | its one press |
- * | `#ratchet-button` | pressed before the handshake (refusal), pressed with the curve break OFF (`HEALED`) and pressed with it ON (`HEALED — AND STILL READ`). The classical outcome was never visited: the old walk toggled the model on first and only ever saw one of this control's two reachable verdicts |
+ * | `#ratchet-button` | pressed before the handshake (refusal), pressed with the curve break OFF (`HEALED`) and pressed with it ON (`NO RECOVERY — OBSERVER STILL READS EACH ROOT`). The classical outcome was never visited: the old walk toggled the model on first and only ever saw one of this control's two reachable verdicts |
  * | `summary` × 2 | closed at arrival, opened |
  *
  * Deliberately NOT walked, with the reason:
@@ -87,7 +87,7 @@ export async function driveEveryState(
   await visit('lattice break withdrawn')
 
   await page.locator('#ratchet-button').click()
-  await expect(page.locator('#ratchet-output')).toContainText('HEALED — AND STILL READ')
+  await expect(page.locator('#ratchet-output')).toContainText('NO RECOVERY — OBSERVER STILL READS EACH ROOT')
   await visit('reduced ratchet under curve break')
 
   await page.locator('#quantum-toggle').uncheck()

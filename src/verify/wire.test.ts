@@ -29,6 +29,8 @@ describe('measureWire', () => {
     const state = createBobState()
     const bundle = publishBundle(state)
     const alice = await runAlice(bundle)
+    expect(() => measureWire(alice.message, alice.associatedData, [])).toThrow('nonempty')
+    expect(() => measureWire(alice.message, alice.associatedData, [new Uint8Array()])).toThrow('nonempty')
     const secrets = [
       alice.components.dh1,
       alice.components.dh2,
